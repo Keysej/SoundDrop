@@ -437,17 +437,15 @@ async function saveSoundDrop(audioBlob, context, type, filename) {
         const result = await response.json();
         console.log('Sound drop saved successfully:', result);
         
-        // Add to localStorage backup immediately
+        // Add to localStorage backup immediately and render right away
         const backup = getLocalBackup();
         backup.unshift(result.drop);
         safeSetLocalStorage('soundDropsBackup', JSON.stringify(backup));
-        
-        // Also try to save to backup service for cross-device sharing
-        await saveToBackupService(backup);
-        
-        const freshData = await getSoundDrops();
-        renderSoundDropsFromData(freshData);
-        updateStatsFromData(freshData);
+        renderSoundDropsFromData(backup);
+        updateStatsFromData(backup);
+
+        // Sync to backup service in background
+        saveToBackupService(backup);
       } else {
         const errorText = await response.text();
         console.error('❌ UPLOAD FAILED:', response.status, errorText);
@@ -648,8 +646,10 @@ async function updateStats() {
 // Update stats from provided data
 function updateStatsFromData(drops) {
   const totalDiscussions = drops.reduce((sum, drop) => sum + drop.discussions.length, 0);
-  
+  const totalApplauds = drops.reduce((sum, drop) => sum + (typeof drop.applauds === 'number' ? drop.applauds : 0), 0);
+
   document.getElementById('drop-count').textContent = drops.length;
+  document.getElementById('applaud-count').textContent = totalApplauds;
   document.getElementById('discussion-count').textContent = totalDiscussions;
 }
 
@@ -1279,70 +1279,70 @@ async function toggleApplaud(dropId) {
   
   // Update localStorage
   localStorage.setItem(applaudKey, (!hasApplauded).toString());
-  
-  // Update the drop data
+
+  // Update local backup data if drop is present
   const localDrops = getLocalBackup();
   const dropIndex = localDrops.findIndex(d => d.id == dropId);
-  
+
   if (dropIndex !== -1) {
-    // Initialize applauds if not exists
-    if (!localDrops[dropIndex].applauds) {
+    if (typeof localDrops[dropIndex].applauds !== 'number') {
       localDrops[dropIndex].applauds = 0;
     }
-    
-    // Toggle applaud count
     if (hasApplauded) {
       localDrops[dropIndex].applauds = Math.max(0, localDrops[dropIndex].applauds - 1);
-      showNotification('Applaud removed', 'info');
     } else {
       localDrops[dropIndex].applauds += 1;
-      showNotification('👏 Applauded!', 'success');
     }
-    
-    // Save to localStorage
     safeSetLocalStorage('soundDropsBackup', JSON.stringify(localDrops));
-    
-    // Update UI immediately
-    const applaudBtn = document.querySelector(`button[data-drop-id="${dropId}"]`);
-    if (applaudBtn) {
-      const countSpan = applaudBtn.querySelector('.applaud-count');
-      if (countSpan) {
-        countSpan.textContent = localDrops[dropIndex].applauds;
-      }
-      
-      // Visual feedback
-      applaudBtn.style.transform = 'scale(1.2)';
-      setTimeout(() => {
-        applaudBtn.style.transform = 'scale(1)';
-      }, 150);
-      
-      // Update button style based on applaud state
-      if (!hasApplauded) {
-        applaudBtn.classList.add('applauded');
-      } else {
-        applaudBtn.classList.remove('applauded');
-      }
-    }
-    
-    // Update stats
     updateStatsFromData(localDrops);
-    
-    // Try to sync with API in background
-    try {
-      const response = await fetch(`/api/sound-drops/${dropId}/applaud`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applaud: !hasApplauded })
-      });
-      
-      if (response.ok) {
-        console.log('Applaud synced with API');
-      } else {
-        console.log('API applaud sync failed, but saved locally');
-      }
-    } catch (error) {
-      console.log('API applaud sync failed, but saved locally:', error.message);
+  }
+
+  // Always update the button UI
+  if (!hasApplauded) {
+    showNotification('👏 Applauded!', 'success');
+  } else {
+    showNotification('Applaud removed', 'info');
+  }
+
+  const applaudBtn = document.querySelector(`button[data-drop-id="${dropId}"]`);
+  if (applaudBtn) {
+    if (dropIndex !== -1) {
+      const countSpan = applaudBtn.querySelector('.applaud-count');
+      if (countSpan) countSpan.textContent = localDrops[dropIndex].applauds;
     }
+    applaudBtn.style.transform = 'scale(1.2)';
+    setTimeout(() => { applaudBtn.style.transform = 'scale(1)'; }, 150);
+    if (!hasApplauded) {
+      applaudBtn.classList.add('applauded');
+    } else {
+      applaudBtn.classList.remove('applauded');
+    }
+  }
+
+  // Sync with API and update count from server response
+  try {
+    const response = await fetch(`/api/sound-drops/${dropId}/applaud`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ applaud: !hasApplauded })
+    });
+    if (response.ok) {
+      const data = await response.json();
+      // Update button count with authoritative server value
+      if (applaudBtn) {
+        const countSpan = applaudBtn.querySelector('.applaud-count');
+        if (countSpan) countSpan.textContent = data.applauds;
+      }
+      if (dropIndex !== -1) {
+        localDrops[dropIndex].applauds = data.applauds;
+        safeSetLocalStorage('soundDropsBackup', JSON.stringify(localDrops));
+        updateStatsFromData(localDrops);
+      }
+    } else {
+      console.log('API applaud sync failed, but saved locally');
+    }
+  } catch (error) {
+    console.log('API applaud sync failed, but saved locally:', error.message);
   }
 }
 
@@ -2145,10 +2145,11 @@ function isValidAudioLink(url) {
 async function saveLinkDrop(link, context) {
   try {
     const dropData = {
-      audioData: link, // Store the link as audioData
+      audioData: link,
       context: context || '',
       type: 'link',
-      filename: `link_${Date.now()}`
+      filename: `link_${Date.now()}`,
+      group_code: currentGroup || 'default'
     };
     
     const response = await fetch('/api/sound-drops', {
@@ -2163,14 +2164,12 @@ async function saveLinkDrop(link, context) {
       const result = await response.json();
       console.log('Link drop saved successfully:', result);
       
-      // Add to localStorage backup immediately
+      // Add to localStorage backup immediately and render right away
       const backup = getLocalBackup();
       backup.unshift(result.drop);
       safeSetLocalStorage('soundDropsBackup', JSON.stringify(backup));
-      
-      const freshData = await getSoundDrops();
-      renderSoundDropsFromData(freshData);
-      updateStatsFromData(freshData);
+      renderSoundDropsFromData(backup);
+      updateStatsFromData(backup);
     } else {
       const errorText = await response.text();
       console.error('Failed to save link drop:', response.status, errorText);
