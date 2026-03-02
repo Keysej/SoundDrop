@@ -10,10 +10,10 @@ from pymongo.errors import ConnectionFailure, OperationFailure
 
 app = Flask(__name__)
 
-# Root route for basic testing
-@app.route('/')
-def root():
-    return jsonify({'message': 'SoundDrop API', 'status': 'running'})
+# Root route removed - static files are served by Vercel
+# @app.route('/')
+# def root():
+#     return jsonify({'message': 'SoundDrop API', 'status': 'running'})
 
 # Add datetime filter for templates
 @app.template_filter('datetime')
@@ -764,9 +764,10 @@ ADMIN_DASHBOARD_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
-def index():
-    return render_template_string(JOURNAL_TEMPLATE)
+# Root route removed - static files are served by Vercel
+# @app.route('/')
+# def index():
+#     return render_template_string(JOURNAL_TEMPLATE)
 
 @app.route('/admin')
 def admin_login():
