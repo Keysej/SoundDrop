@@ -1263,7 +1263,7 @@ def create_sound_drop():
             'type': data.get('type', 'recorded'),
             'filename': data.get('filename', f"recording_{drop_timestamp}"),
             'discussions': [],
-            'applauds': [],  # Initialize as empty array, not 0
+            'applauds': 0,
             'group_code': data.get('group_code', 'default')  # Add group support
         }
         
@@ -1326,8 +1326,8 @@ def toggle_applaud(drop_id):
         if not target_drop:
             return jsonify({'error': 'Sound drop not found'}), 404
         
-        # Initialize applauds if not exists
-        if 'applauds' not in target_drop:
+        # Initialize applauds if not exists or was incorrectly stored as a list
+        if 'applauds' not in target_drop or isinstance(target_drop['applauds'], list):
             target_drop['applauds'] = 0
         
         # Reasonable applaud limits for research integrity
