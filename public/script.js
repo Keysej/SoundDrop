@@ -713,72 +713,51 @@ async function startRecording() {
     };
     
     mediaRecorder.onstop = () => {
-      // Use the same MIME type as the recorder for the blob
       const recordedMimeType = mediaRecorder.mimeType || 'audio/webm';
-      console.log('Recording stopped. Chunks received:', audioChunks.length);
-      console.log('Total audio data size:', audioChunks.reduce((total, chunk) => total + chunk.size, 0), 'bytes');
-      
-      // Validate that we have actual audio data
+
       if (audioChunks.length === 0) {
-        console.error('No audio chunks received - recording may have failed');
-        alert('Recording failed - no audio data received. Please check your microphone permissions and try again.');
+        alert('Recording failed — no audio data received. Please check your microphone permissions and try again.');
+        hideRecordingSection();
         return;
       }
-      
+
       const audioBlob = new Blob(audioChunks, { type: recordedMimeType });
-      console.log('Recording completed with MIME type:', recordedMimeType, 'Final blob size:', audioBlob.size, 'bytes');
-      
-      // Additional validation for empty or too-small recordings
-      if (audioBlob.size < 1000) { // Less than 1KB is likely empty/corrupted
-        console.error('Recording appears to be empty or corrupted (size:', audioBlob.size, 'bytes)');
-        alert('Recording appears to be empty. Please check your microphone and try again.');
+
+      if (audioBlob.size < 1000) {
+        alert('Recording appears empty. Please check your microphone and try again.');
+        hideRecordingSection();
         return;
       }
-      
-      // Show save interface
-      document.getElementById('share-drop-btn').style.display = 'block';
-      document.getElementById('retake-btn').style.display = 'block';
+
+      // Hide recording controls, show preview
+      document.getElementById('recording-controls').style.display = 'none';
       document.getElementById('audio-preview').style.display = 'block';
-      
-      // Set up audio preview with error handling
+
       const audioUrl = URL.createObjectURL(audioBlob);
-      const previewAudio = document.getElementById('preview-audio');
-      previewAudio.src = audioUrl;
-      
-      // Add error handling for audio preview
-      previewAudio.onerror = (e) => {
-        console.error('Audio preview failed:', e);
-        console.log('Trying to create a more compatible audio preview...');
-        // The audio might still be saveable even if preview fails
-      };
-      
-      previewAudio.onloadeddata = () => {
-        console.log('Audio preview loaded successfully. Duration:', previewAudio.duration, 'seconds');
-      };
-      
+      document.getElementById('preview-audio').src = audioUrl;
+
       document.getElementById('share-drop-btn').onclick = async () => {
         const context = document.getElementById('sound-context').value;
         await saveSoundDrop(audioBlob, context, 'recorded');
         hideRecordingSection();
       };
-      
+
       document.getElementById('retake-btn').onclick = () => {
-        // Reset for new recording
-        document.getElementById('share-drop-btn').style.display = 'none';
-        document.getElementById('retake-btn').style.display = 'none';
         document.getElementById('audio-preview').style.display = 'none';
-        document.getElementById('record-btn').style.display = 'block';
-        document.getElementById('recording-time').textContent = '00:00';
+        document.getElementById('sound-context').value = '';
+        startRecording();
       };
     };
     
     mediaRecorder.start();
     recordingStartTime = Date.now();
-    
-    // Update UI
-    document.getElementById('record-btn').style.display = 'none';
-    document.getElementById('stop-btn').style.display = 'block';
-    
+
+    // Show recording controls and context box
+    document.getElementById('recording-controls').style.display = 'flex';
+    document.getElementById('recording-context-box').style.display = 'block';
+    document.getElementById('audio-preview').style.display = 'none';
+    document.getElementById('recording-time').textContent = '00:00';
+
     // Start timer
     recordingInterval = setInterval(updateRecordingTime, 1000);
     
@@ -812,10 +791,6 @@ function stopRecording() {
     mediaRecorder.stop();
     mediaRecorder.stream.getTracks().forEach(track => track.stop());
     clearInterval(recordingInterval);
-    
-    // Update UI
-    document.getElementById('record-btn').style.display = 'block';
-    document.getElementById('stop-btn').style.display = 'none';
   }
 }
 
@@ -830,22 +805,30 @@ function updateRecordingTime() {
   }
 }
 
-// Show recording section
+// Show recording section and immediately start recording
 async function showRecordingSection() {
   document.getElementById('recording-section').style.display = 'block';
+  document.getElementById('recording-controls').style.display = 'none';
+  document.getElementById('recording-context-box').style.display = 'none';
+  document.getElementById('audio-preview').style.display = 'none';
+  document.getElementById('sound-context').value = '';
   const currentTheme = await getTodaysTheme();
   document.getElementById('recording-theme').textContent = currentTheme.title;
+  startRecording();
 }
 
-// Hide recording section
+// Hide and fully reset recording section
 function hideRecordingSection() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    clearInterval(recordingInterval);
+  }
   document.getElementById('recording-section').style.display = 'none';
-  document.getElementById('sound-context').value = '';
-  document.getElementById('share-drop-btn').style.display = 'none';
-  document.getElementById('retake-btn').style.display = 'none';
+  document.getElementById('recording-controls').style.display = 'none';
+  document.getElementById('recording-context-box').style.display = 'none';
   document.getElementById('audio-preview').style.display = 'none';
-  document.getElementById('record-btn').style.display = 'block';
-  document.getElementById('stop-btn').style.display = 'none';
+  document.getElementById('sound-context').value = '';
   document.getElementById('recording-time').textContent = '00:00';
 }
 
@@ -1648,7 +1631,6 @@ async function initializeApp() {
   
   // Event listeners
   document.getElementById('drop-sound-btn').addEventListener('click', showRecordingSection);
-  document.getElementById('record-btn').addEventListener('click', startRecording);
   document.getElementById('stop-btn').addEventListener('click', stopRecording);
   document.getElementById('link-btn').addEventListener('click', showLinkModal);
   document.getElementById('sync-btn').addEventListener('click', async () => {

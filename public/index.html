@@ -106,30 +106,34 @@
     <div class="recording-section" id="recording-section" style="display: none;">
       <div class="recorder-card">
         <h3>Recording for: <span id="recording-theme"></span></h3>
-        <div class="recorder-controls">
-          <button class="record-btn" id="record-btn">
-            <i class="fa-solid fa-circle" style="color: #ff4444;"></i>
-          </button>
-          <button class="stop-btn" id="stop-btn" style="display: none;">
-            <i class="fa-solid fa-stop"></i>
-          </button>
+
+        <!-- Active recording controls: timer + stop -->
+        <div class="recorder-controls" id="recording-controls" style="display: none;">
+          <span class="recording-live-dot"></span>
           <span class="recording-time" id="recording-time">00:00</span>
+          <button class="stop-btn" id="stop-btn">
+            <i class="fa-solid fa-stop"></i> Stop
+          </button>
         </div>
+
+        <!-- Context box: visible as soon as recording starts -->
+        <div class="recording-context" id="recording-context-box" style="display: none;">
+          <textarea id="sound-context" placeholder="Add a note about this sound (optional)..."></textarea>
+        </div>
+
+        <!-- Post-recording: preview + actions -->
         <div class="audio-preview" id="audio-preview" style="display: none;">
-          <h4>Preview Your Recording:</h4>
-          <audio id="preview-audio" controls style="width: 100%; margin-bottom: 15px;"></audio>
-        </div>
-        <div class="recording-context">
-          <textarea id="sound-context" placeholder="How does this sound relate to today's theme? (optional)"></textarea>
+          <audio id="preview-audio" controls style="width: 100%;"></audio>
           <div class="recording-actions">
-            <button class="retake-btn" id="retake-btn" style="display: none;">
-              <i class="fa-solid fa-redo"></i> Retake
+            <button class="retake-btn" id="retake-btn">
+              <i class="fa-solid fa-redo"></i> Re-record
             </button>
-            <button class="share-drop-btn" id="share-drop-btn" style="display: none;">
+            <button class="share-drop-btn" id="share-drop-btn">
               <i class="fa-solid fa-share"></i> Share
             </button>
           </div>
         </div>
+
       </div>
     </div>
 
