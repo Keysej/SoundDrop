@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SoundDrop - Ephemeral Sound Research</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+  <script src="https://kit.fontawesome.com/77e427e5fc.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="menu">
+        <i class="fa-solid fa-bars"></i>
+        <div class="menu-rect rounded-rect">
+          <a href="about.html">About</a>
+          <a href="contact.html">Contact</a>
+        </div>
+      </div>
+      <div class="header-title-wrapper">
+        <h1 class="title">🎵 SoundDrop</h1>
+      </div>
+    </div>
+
+    <div class="theme-section">
+      <div class="theme-card">
+        <h2 class="theme-title">Today's Theme: <span id="daily-theme">"Urban Soundscapes"</span></h2>
+        <div class="theme-stats">
+          <div class="countdown">
+            <i class="fa-solid fa-clock"></i>
+            <span id="countdown-timer">Loading...</span> until sounds disappear
+          </div>
+          <div class="stats">
+            <span id="drop-count">0</span> drops today | <span id="discussion-count">0</span> discussions
+          </div>
+        </div>
+        <p class="theme-description" id="theme-description">
+          Capture the sounds that define our urban environment. Street noise, construction, conversations, traffic, music bleeding from windows - what audio defines city life for you?
+        </p>
+      </div>
+    </div>
+
+    <div class="actions-section">
+      <button class="drop-sound-btn" id="drop-sound-btn">
+        <i class="fa-solid fa-microphone"></i> Drop Your Sound
+      </button>
+      <input type="file" id="file-upload" accept="audio/*" style="display: none;">
+      <button class="upload-btn" onclick="document.getElementById('file-upload').click()">
+        <i class="fa-solid fa-upload"></i> Upload Audio
+      </button>
+    </div>
+
+    <div class="recording-section" id="recording-section" style="display: none;">
+      <div class="recorder-card">
+        <h3>Recording for: <span id="recording-theme"></span></h3>
+        <div class="recorder-controls">
+          <button class="record-btn" id="record-btn">
+            <i class="fa-solid fa-circle" style="color: #ff4444;"></i>
+          </button>
+          <button class="stop-btn" id="stop-btn" style="display: none;">
+            <i class="fa-solid fa-stop"></i>
+          </button>
+          <span class="recording-time" id="recording-time">00:00</span>
+        </div>
+        <div class="recording-context">
+          <textarea id="sound-context" placeholder="How does this sound relate to today's theme? (optional)"></textarea>
+          <button class="save-drop-btn" id="save-drop-btn" style="display: none;">Save Drop</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="filter-tags">
+      <button class="filter-tag active" data-filter="all">All Drops</button>
+      <button class="filter-tag" data-filter="recorded">Recorded</button>
+      <button class="filter-tag" data-filter="uploaded">Uploaded</button>
+      <button class="filter-tag" data-filter="discussed">Most Discussed</button>
+    </div>
+
+    <div id="sound-drops" class="sound-drops"></div>
+  </div>
+
+  <div class="modal" id="upload-modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h3>Upload Sound for Today's Theme</h3>
+      <form id="upload-form">
+        <input type="file" id="audio-file" accept="audio/*" required>
+        <textarea id="upload-context" placeholder="How does this sound relate to today's theme?"></textarea>
+        <button type="submit">Drop Sound</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
