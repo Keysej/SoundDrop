@@ -622,6 +622,17 @@ body {
 
 .btn-comment-submit:hover { background: #1a0f3d; }
 
+/* ── Audio loading placeholder (cache hit, server fetch pending) ─────────────── */
+.audio-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #aaa;
+  font-size: 0.85em;
+  padding: 10px 0;
+  font-style: italic;
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;

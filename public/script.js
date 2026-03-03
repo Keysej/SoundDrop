@@ -11,6 +11,48 @@ let drops          = [];
 let currentFilter  = 'all';
 let dropsCleared   = false;
 
+// ── Local cache ───────────────────────────────────────────────────────────────
+// Drops are cached in localStorage so they survive page refreshes even if the
+// server is slow or has a cold start.  Audio base64 is stripped (too large) but
+// link URLs are kept.  The audio element shows a "loading" placeholder until the
+// server response fills it in.
+const CACHE_KEY = `sounddrop_drops_${GROUP}`;
+
+function saveCache() {
+  try {
+    const lite = drops.map(d => {
+      if (d.type === 'link') return { ...d };        // URL is small, keep it
+      const { audioData, ...rest } = d;              // strip base64 to save space
+      return rest;
+    });
+    localStorage.setItem(CACHE_KEY, JSON.stringify(lite));
+  } catch (e) {
+    // If localStorage is full, silently ignore
+  }
+}
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return [];
+    const cached = JSON.parse(raw);
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return cached.filter(d => d.timestamp >= midnight.getTime());
+  } catch (e) {
+    return [];
+  }
+}
+
+// Merge server drops into cache: server wins on audioData, cache preserves local
+// additions that the server might not know about yet
+function mergeWithCache(serverDrops) {
+  const serverIds = new Set(serverDrops.map(d => String(d.id)));
+  // Keep any locally-cached drops not yet in the server response
+  const localOnly = drops.filter(d => !serverIds.has(String(d.id)));
+  return [...serverDrops, ...localOnly];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -63,10 +105,10 @@ function updateCountdown() {
   if (h === 0 && m === 0 && s === 0 && !dropsCleared) {
     dropsCleared = true;
     drops = [];
+    localStorage.removeItem(CACHE_KEY);   // wipe today's cache at midnight
     renderDrops();
     updateStats();
     toast('Sounds have disappeared — new theme starts now!', 'success');
-    // After 2 s, reload theme + drops for the new day
     setTimeout(() => {
       dropsCleared = false;
       loadTheme();
@@ -93,15 +135,20 @@ async function loadDrops() {
     if (!res.ok) return;
     const all = await res.json();
 
-    // Keep only today's drops (server sends last 30 h; trim to local midnight)
+    // Trim to today's drops (server sends last 30 h; frontend trims to local midnight)
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    drops = all.filter(d => d.timestamp >= midnight.getTime());
+    const serverDrops = all.filter(d => d.timestamp >= midnight.getTime());
+
+    // Merge: server data wins but we keep any local drops not yet on server
+    drops = mergeWithCache(serverDrops);
 
     renderDrops();
     updateStats();
+    saveCache();         // persist the fresh server data to cache
   } catch (e) {
     console.error('loadDrops failed:', e);
+    // Server unreachable — keep showing whatever is in drops (already loaded from cache)
   }
 }
 
@@ -143,7 +190,7 @@ function renderDrops() {
     return;
   }
 
-  // "Most Discussed" is already sorted above; all others → newest first
+  // "Most Discussed" already sorted; others → newest first
   const sorted = currentFilter === 'discussed'
     ? filtered
     : [...filtered].sort((a, b) => b.timestamp - a.timestamp);
@@ -162,15 +209,25 @@ function buildCard(drop) {
   const comments  = drop.discussions || [];
   const typeClass = `type-${drop.type}`;
 
-  // Use <source> inside <audio> for best cross-browser support (Chrome, Safari, Firefox)
-  const mediaHTML = drop.type === 'link'
-    ? `<a class="drop-link-btn" href="${drop.audioData}" target="_blank" rel="noopener">
-         <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Audio Link
-       </a>`
-    : `<audio class="drop-audio" controls preload="none">
-         <source src="${drop.audioData}">
-         Your browser does not support audio playback.
-       </audio>`;
+  // audioData may be absent if loaded from metadata-only cache.
+  // Show a loading placeholder until the next server fetch fills it in.
+  let mediaHTML;
+  if (drop.type === 'link') {
+    const href = drop.audioData || '#';
+    mediaHTML = `<a class="drop-link-btn" href="${href}" target="_blank" rel="noopener">
+      <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Audio Link
+    </a>`;
+  } else if (drop.audioData) {
+    mediaHTML = `<audio class="drop-audio" controls preload="none">
+      <source src="${drop.audioData}">
+      Your browser does not support audio playback.
+    </audio>`;
+  } else {
+    // Metadata loaded from cache; audio arrives with next server fetch (~1–2s)
+    mediaHTML = `<div class="audio-loading">
+      <i class="fa-solid fa-spinner fa-spin"></i> Audio loading…
+    </div>`;
+  }
 
   card.innerHTML = `
     <div class="drop-header">
@@ -232,7 +289,6 @@ async function handleApplaud(dropId, btn, card) {
   const was    = localStorage.getItem(`applauded_${dropId}`) === 'true';
   const adding = !was;
 
-  // Optimistic update
   const countEl = btn.querySelector('.applaud-count');
   countEl.textContent = adding
     ? parseInt(countEl.textContent || 0) + 1
@@ -249,9 +305,13 @@ async function handleApplaud(dropId, btn, card) {
       const data = await res.json();
       countEl.textContent = data.applauds;
       const drop = drops.find(d => d.id == dropId);
-      if (drop) { drop.applauds = data.applauds; updateStats(); }
+      if (drop) { drop.applauds = data.applauds; updateStats(); saveCache(); }
     }
-  } catch (e) { /* keep optimistic */ }
+  } catch (e) {
+    // Keep optimistic update; cache still reflects the user's intent
+    const drop = drops.find(d => d.id == dropId);
+    if (drop) { drop.applauds = parseInt(countEl.textContent); saveCache(); }
+  }
 }
 
 // ── Comments ──────────────────────────────────────────────────────────────────
@@ -274,6 +334,7 @@ async function handleComment(dropId, text, card) {
         const span = card.querySelector('.comment-count');
         span.textContent = `${drop.discussions.length} comment${drop.discussions.length !== 1 ? 's' : ''}`;
         updateStats();
+        saveCache();    // persist the new comment to cache
       }
       toast('Comment posted!', 'success');
     } else {
@@ -285,8 +346,6 @@ async function handleComment(dropId, text, card) {
 }
 
 // ── Recording ─────────────────────────────────────────────────────────────────
-// Choose the best MIME type supported by the current browser
-// Safari/iOS needs audio/mp4; Chrome prefers audio/webm;codecs=opus
 function getBestMimeType() {
   const candidates = [
     'audio/webm;codecs=opus',  // Chrome, Edge, Firefox
@@ -303,22 +362,17 @@ function getBestMimeType() {
 }
 
 function getExtFromMime(mimeType) {
-  if (!mimeType)                  return 'webm';
-  if (mimeType.includes('mp4'))   return 'm4a';
-  if (mimeType.includes('ogg'))   return 'ogg';
-  if (mimeType.includes('webm'))  return 'webm';
+  if (!mimeType)                 return 'webm';
+  if (mimeType.includes('mp4')) return 'm4a';
+  if (mimeType.includes('ogg')) return 'ogg';
+  if (mimeType.includes('webm')) return 'webm';
   return 'audio';
 }
 
 async function startRecording() {
   try {
-    // echoCancellation + noiseSuppression improve quality on all platforms
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        channelCount: 1
-      }
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
     });
 
     showPanel('recording-panel');
@@ -328,12 +382,8 @@ async function startRecording() {
     document.getElementById('recording-timer').textContent    = '00:00';
 
     const mimeType = getBestMimeType();
-    const options  = {
-      ...(mimeType ? { mimeType } : {}),
-      audioBitsPerSecond: 128000
-    };
+    const options  = { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 128000 };
 
-    // Some browsers reject unknown options — fall back gracefully
     try {
       mediaRecorder = new MediaRecorder(stream, options);
     } catch (e) {
@@ -377,23 +427,16 @@ async function startRecording() {
 
   } catch (e) {
     let msg = 'Could not access microphone. Please check your settings.';
-    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-      msg = 'Microphone access denied. Please allow microphone access in your browser settings.';
-    } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
-      msg = 'No microphone found on this device.';
-    } else if (e.name === 'NotSupportedError') {
-      msg = 'Recording is not supported on this browser. Try Chrome or Safari.';
-    } else if (e.name === 'NotReadableError') {
-      msg = 'Microphone is in use by another application.';
-    }
+    if (e.name === 'NotAllowedError'  || e.name === 'PermissionDeniedError') msg = 'Microphone access denied. Please allow it in your browser settings.';
+    else if (e.name === 'NotFoundError'   || e.name === 'DevicesNotFoundError') msg = 'No microphone found on this device.';
+    else if (e.name === 'NotSupportedError')  msg = 'Recording is not supported on this browser. Try Chrome or Safari.';
+    else if (e.name === 'NotReadableError')   msg = 'Microphone is in use by another application.';
     toast(msg, 'error');
   }
 }
 
 function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  }
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
 }
 
 function resetRecording() {
@@ -433,6 +476,7 @@ async function shareRecording() {
         drops.unshift(data.drop);
         renderDrops();
         updateStats();
+        saveCache();    // persist new drop immediately
         toast('Sound shared!', 'success');
       } else {
         toast('Failed to share. Try again.', 'error');
@@ -474,6 +518,7 @@ async function handleUpload(file) {
         drops.unshift(data.drop);
         renderDrops();
         updateStats();
+        saveCache();    // persist new drop immediately
         toast('Sound uploaded!', 'success');
       } else {
         toast('Upload failed. Try again.', 'error');
@@ -515,6 +560,7 @@ async function shareLink() {
       drops.unshift(data.drop);
       renderDrops();
       updateStats();
+      saveCache();    // persist new drop immediately
       toast('Link shared!', 'success');
     } else {
       toast('Failed to share. Try again.', 'error');
@@ -536,16 +582,24 @@ function hidePanel(id) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
-  // Countdown clock — ticks every second
+  // ── Step 1: Show cached drops INSTANTLY (before any network call) ──────────
+  const cached = loadCache();
+  if (cached.length > 0) {
+    drops = cached;
+    renderDrops();
+    updateStats();
+  }
+
+  // ── Step 2: Start countdown clock ─────────────────────────────────────────
   updateCountdown();
   setInterval(updateCountdown, 1000);
 
-  // Load theme + drops, then auto-refresh drops every 60 s
+  // ── Step 3: Load fresh data from server (replaces/merges with cache) ───────
   loadTheme();
   loadDrops();
-  setInterval(loadDrops, 60000);
+  setInterval(loadDrops, 30000);   // refresh every 30 s (was 60 s)
 
-  // Filter tabs
+  // ── Filter tabs ────────────────────────────────────────────────────────────
   document.querySelectorAll('.filter-tag').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
@@ -555,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Record
+  // ── Record ─────────────────────────────────────────────────────────────────
   document.getElementById('btn-record').addEventListener('click', startRecording);
   document.getElementById('btn-stop').addEventListener('click', stopRecording);
   document.getElementById('btn-rerecord').addEventListener('click', () => {
@@ -568,7 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hidePanel('recording-panel');
   });
 
-  // Upload — accepts any audio format
+  // ── Upload ──────────────────────────────────────────��──────────────────────
   document.getElementById('btn-upload').addEventListener('click', () =>
     document.getElementById('file-input').click()
   );
@@ -577,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   });
 
-  // Share link
+  // ── Share link ─────────────────────────────────────────────────────────────
   document.getElementById('btn-link').addEventListener('click', () => showPanel('link-panel'));
   document.getElementById('btn-cancel-link').addEventListener('click', () => hidePanel('link-panel'));
   document.getElementById('btn-share-link').addEventListener('click', shareLink);
