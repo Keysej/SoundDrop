@@ -8,6 +8,8 @@ let timerInterval  = null;
 let recordStart    = 0;
 let currentBlob    = null;
 let drops          = [];
+let currentFilter  = 'all';
+let dropsCleared   = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -55,7 +57,22 @@ function updateCountdown() {
 
   if      (h < 2) el.style.color = '#e74c3c';
   else if (h < 6) el.style.color = '#f39c12';
-  else            el.style.color = '#2d1b69';
+  else            el.style.color = '#00e5ff';
+
+  // When clock hits zero, clear all drops from the page immediately
+  if (h === 0 && m === 0 && s === 0 && !dropsCleared) {
+    dropsCleared = true;
+    drops = [];
+    renderDrops();
+    updateStats();
+    toast('Sounds have disappeared — new theme starts now!', 'success');
+    // After 2 s, reload theme + drops for the new day
+    setTimeout(() => {
+      dropsCleared = false;
+      loadTheme();
+      loadDrops();
+    }, 2000);
+  }
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -76,7 +93,7 @@ async function loadDrops() {
     if (!res.ok) return;
     const all = await res.json();
 
-    // Keep only today's drops (server sends last 30 h; we trim to local midnight)
+    // Keep only today's drops (server sends last 30 h; trim to local midnight)
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     drops = all.filter(d => d.timestamp >= midnight.getTime());
@@ -100,35 +117,60 @@ function updateStats() {
 function renderDrops() {
   const list = document.getElementById('drops-list');
 
-  if (drops.length === 0) {
+  // Apply active filter
+  let filtered;
+  if (currentFilter === 'recorded') {
+    filtered = drops.filter(d => d.type === 'recorded');
+  } else if (currentFilter === 'uploaded') {
+    filtered = drops.filter(d => d.type === 'uploaded');
+  } else if (currentFilter === 'discussed') {
+    filtered = [...drops].sort((a, b) =>
+      (b.discussions || []).length - (a.discussions || []).length
+    );
+  } else {
+    filtered = [...drops].sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  if (filtered.length === 0) {
+    const msg = currentFilter === 'all'
+      ? 'No sounds yet today — be the first to drop one!'
+      : `No ${currentFilter} sounds yet today.`;
     list.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-waveform-lines"></i>
-        <p>No sounds yet today — be the first to drop one!</p>
+        <p>${msg}</p>
       </div>`;
     return;
   }
 
-  const sorted = [...drops].sort((a, b) => b.timestamp - a.timestamp);
+  // "Most Discussed" is already sorted above; all others → newest first
+  const sorted = currentFilter === 'discussed'
+    ? filtered
+    : [...filtered].sort((a, b) => b.timestamp - a.timestamp);
+
   list.innerHTML = '';
   sorted.forEach(d => list.appendChild(buildCard(d)));
 }
 
 function buildCard(drop) {
-  const card         = document.createElement('div');
-  card.className     = 'drop-card';
-  card.dataset.id    = drop.id;
+  const card      = document.createElement('div');
+  card.className  = 'drop-card';
+  card.dataset.id = drop.id;
 
-  const applauded    = localStorage.getItem(`applauded_${drop.id}`) === 'true';
-  const applauds     = typeof drop.applauds === 'number' ? drop.applauds : 0;
-  const comments     = drop.discussions || [];
-  const typeClass    = `type-${drop.type}`;
+  const applauded = localStorage.getItem(`applauded_${drop.id}`) === 'true';
+  const applauds  = typeof drop.applauds === 'number' ? drop.applauds : 0;
+  const comments  = drop.discussions || [];
+  const typeClass = `type-${drop.type}`;
 
+  // Use <source> inside <audio> for best cross-browser support (Chrome, Safari, Firefox)
   const mediaHTML = drop.type === 'link'
     ? `<a class="drop-link-btn" href="${drop.audioData}" target="_blank" rel="noopener">
          <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Audio Link
        </a>`
-    : `<audio class="drop-audio" controls src="${drop.audioData}"></audio>`;
+    : `<audio class="drop-audio" controls preload="none">
+         <source src="${drop.audioData}">
+         Your browser does not support audio playback.
+       </audio>`;
 
   card.innerHTML = `
     <div class="drop-header">
@@ -243,9 +285,41 @@ async function handleComment(dropId, text, card) {
 }
 
 // ── Recording ─────────────────────────────────────────────────────────────────
+// Choose the best MIME type supported by the current browser
+// Safari/iOS needs audio/mp4; Chrome prefers audio/webm;codecs=opus
+function getBestMimeType() {
+  const candidates = [
+    'audio/webm;codecs=opus',  // Chrome, Edge, Firefox
+    'audio/webm',
+    'audio/mp4',               // Safari macOS + iOS 14.3+
+    'audio/ogg;codecs=opus',   // Firefox
+    'audio/ogg',
+  ];
+  if (typeof MediaRecorder === 'undefined') return '';
+  for (const t of candidates) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
+function getExtFromMime(mimeType) {
+  if (!mimeType)                  return 'webm';
+  if (mimeType.includes('mp4'))   return 'm4a';
+  if (mimeType.includes('ogg'))   return 'ogg';
+  if (mimeType.includes('webm'))  return 'webm';
+  return 'audio';
+}
+
 async function startRecording() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // echoCancellation + noiseSuppression improve quality on all platforms
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        channelCount: 1
+      }
+    });
 
     showPanel('recording-panel');
     document.getElementById('recording-status').style.display = 'flex';
@@ -253,21 +327,32 @@ async function startRecording() {
     document.getElementById('record-context').value           = '';
     document.getElementById('recording-timer').textContent    = '00:00';
 
-    const mimeType =
-      MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' :
-      MediaRecorder.isTypeSupported('audio/webm')             ? 'audio/webm' : '';
+    const mimeType = getBestMimeType();
+    const options  = {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: 128000
+    };
 
-    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    audioChunks   = [];
-    currentBlob   = null;
+    // Some browsers reject unknown options — fall back gracefully
+    try {
+      mediaRecorder = new MediaRecorder(stream, options);
+    } catch (e) {
+      mediaRecorder = new MediaRecorder(stream);
+    }
 
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    audioChunks = [];
+    currentBlob = null;
+
+    mediaRecorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) audioChunks.push(e.data);
+    };
 
     mediaRecorder.onstop = () => {
       stream.getTracks().forEach(t => t.stop());
       clearInterval(timerInterval);
 
-      currentBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      const mimeUsed = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      currentBlob = new Blob(audioChunks, { type: mimeUsed });
 
       if (currentBlob.size < 500) {
         toast('Recording too short. Please try again.', 'error');
@@ -280,7 +365,7 @@ async function startRecording() {
       document.getElementById('preview-area').style.display     = 'block';
     };
 
-    mediaRecorder.start(100); // collect data every 100ms
+    mediaRecorder.start(100);
     recordStart = Date.now();
 
     timerInterval = setInterval(() => {
@@ -291,10 +376,16 @@ async function startRecording() {
     }, 1000);
 
   } catch (e) {
-    const msg =
-      e.name === 'NotAllowedError' ? 'Microphone access denied. Please allow it and try again.' :
-      e.name === 'NotFoundError'   ? 'No microphone found on this device.' :
-                                     'Could not access microphone.';
+    let msg = 'Could not access microphone. Please check your settings.';
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      msg = 'Microphone access denied. Please allow microphone access in your browser settings.';
+    } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+      msg = 'No microphone found on this device.';
+    } else if (e.name === 'NotSupportedError') {
+      msg = 'Recording is not supported on this browser. Try Chrome or Safari.';
+    } else if (e.name === 'NotReadableError') {
+      msg = 'Microphone is in use by another application.';
+    }
     toast(msg, 'error');
   }
 }
@@ -323,13 +414,14 @@ async function shareRecording() {
   const reader = new FileReader();
   reader.onload = async () => {
     try {
+      const ext = getExtFromMime(currentBlob.type);
       const res = await apiFetch('/api/sound-drops', {
         method: 'POST',
         body: JSON.stringify({
           audioData:  reader.result,
           context,
           type:       'recorded',
-          filename:   `recording_${Date.now()}.webm`,
+          filename:   `recording_${Date.now()}.${ext}`,
           group_code: GROUP
         })
       });
@@ -444,14 +536,24 @@ function hidePanel(id) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
 
-  // Countdown clock
+  // Countdown clock — ticks every second
   updateCountdown();
   setInterval(updateCountdown, 1000);
 
-  // Initial data load + auto-refresh every 60 s
+  // Load theme + drops, then auto-refresh drops every 60 s
   loadTheme();
   loadDrops();
   setInterval(loadDrops, 60000);
+
+  // Filter tabs
+  document.querySelectorAll('.filter-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilter = btn.dataset.filter;
+      renderDrops();
+    });
+  });
 
   // Record
   document.getElementById('btn-record').addEventListener('click', startRecording);
@@ -466,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hidePanel('recording-panel');
   });
 
-  // Upload
+  // Upload — accepts any audio format
   document.getElementById('btn-upload').addEventListener('click', () =>
     document.getElementById('file-input').click()
   );
@@ -475,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   });
 
-  // Link
+  // Share link
   document.getElementById('btn-link').addEventListener('click', () => showPanel('link-panel'));
   document.getElementById('btn-cancel-link').addEventListener('click', () => hidePanel('link-panel'));
   document.getElementById('btn-share-link').addEventListener('click', shareLink);
