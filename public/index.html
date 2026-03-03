@@ -2,97 +2,136 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SoundDrop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>SoundDrop - Ephemeral Sound Research</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+  <script src="https://kit.fontawesome.com/77e427e5fc.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script defer src="script.js"></script>
 </head>
 <body>
   <div class="container">
 
-    <header>
-      <h1>SoundDrop</h1>
-      <p class="subtitle">Ephemeral sound research</p>
-    </header>
-
-    <!-- Theme + countdown -->
-    <div class="theme-card">
-      <div class="theme-header">
-        <div class="theme-text">
-          <p class="theme-label">Today's Theme</p>
-          <h2 id="theme-title">Loading...</h2>
-          <p id="theme-description" class="theme-desc"></p>
-        </div>
-        <div class="countdown-box">
-          <div class="countdown-time" id="countdown">--:--:--</div>
-          <div class="countdown-label">until sounds disappear</div>
+    <div class="header">
+      <div class="menu">
+        <i class="fa-solid fa-bars"></i>
+        <div class="menu-rect rounded-rect">
+          <a href="about.html">About</a>
+          <a href="contact.html">Contact</a>
+          <a href="archive.html">📚 Archive</a>
+          <a href="admin.html">⚙️ Admin</a>
         </div>
       </div>
-      <div class="stats-bar">
-        <span><strong id="stat-drops">0</strong> drops</span>
-        <span><strong id="stat-applauds">0</strong> applauds</span>
-        <span><strong id="stat-comments">0</strong> comments</span>
+      <div class="header-title-wrapper">
+        <h1 class="title">🎵 SoundDrop</h1>
+        <p class="tagline">An ephemeral platform for collaborative audio exploration</p>
       </div>
     </div>
 
-    <!-- Action buttons -->
-    <div class="actions">
-      <button class="btn-record" id="btn-record">
-        <i class="fa-solid fa-microphone"></i> Record
-      </button>
-      <button class="btn-upload" id="btn-upload">
-        <i class="fa-solid fa-upload"></i> Upload
-      </button>
-      <button class="btn-link" id="btn-link">
-        <i class="fa-solid fa-link"></i> Share Link
-      </button>
-      <input type="file" id="file-input" accept="audio/*" style="display:none">
+    <div class="theme-section">
+      <div class="theme-card">
+        <h2 class="theme-heading">Today's Theme: <span id="theme-title">Loading...</span></h2>
+        <p class="theme-description" id="theme-description"></p>
+        <div class="theme-stats">
+          <div class="unified-countdown">
+            <div class="countdown-main">
+              <i class="fa-solid fa-hourglass-start"></i>
+              <span id="countdown">Loading...</span>
+            </div>
+            <div class="countdown-label">until everything resets</div>
+            <small style="opacity: 0.9;">Theme changes &amp; all sounds disappear</small>
+          </div>
+          <div class="stats">
+            <span id="stat-drops">0</span> drops today | <span id="stat-applauds">0</span> applauds | <span id="stat-comments">0</span> discussions
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Recording panel -->
-    <div class="panel" id="recording-panel" style="display:none">
-      <div class="panel-inner">
-        <div class="recording-status" id="recording-status">
-          <span class="live-dot"></span>
-          <span id="recording-timer">00:00</span>
-          <button class="btn-stop" id="btn-stop">
+    <div class="actions-section">
+      <button class="drop-sound-btn" id="btn-record">
+        <i class="fa-solid fa-microphone"></i> Record Your Sound
+      </button>
+      <input type="file" id="file-input" accept="audio/*" style="display: none;">
+      <button class="upload-btn" id="btn-upload">
+        <i class="fa-solid fa-upload"></i> Upload Your Sound
+      </button>
+      <button class="link-btn" id="btn-link">
+        <i class="fa-solid fa-link"></i> Share Your Sound Link
+      </button>
+    </div>
+
+    <!-- Recording Panel -->
+    <div class="recording-section" id="recording-panel" style="display:none">
+      <div class="recorder-card">
+        <h3>🎙️ Recording Your Sound</h3>
+
+        <!-- Active recording controls: timer + stop -->
+        <div class="recorder-controls" id="recording-status" style="display: none;">
+          <span class="recording-live-dot"></span>
+          <span class="recording-time" id="recording-timer">00:00</span>
+          <button class="stop-btn" id="btn-stop">
             <i class="fa-solid fa-stop"></i> Stop
           </button>
         </div>
-        <textarea id="record-context" placeholder="Add a note about this sound (optional)..."></textarea>
-        <div id="preview-area" style="display:none">
-          <audio id="preview-audio" controls></audio>
-          <div class="panel-actions">
-            <button class="btn-secondary" id="btn-rerecord">
+
+        <!-- Context box: always visible while panel is open -->
+        <div class="recording-context">
+          <textarea id="record-context" placeholder="Add a note about this sound (optional)..."></textarea>
+        </div>
+
+        <!-- Post-recording: preview + actions -->
+        <div class="audio-preview" id="preview-area" style="display: none;">
+          <audio id="preview-audio" controls style="width: 100%;"></audio>
+          <div class="recording-actions">
+            <button class="retake-btn" id="btn-rerecord">
               <i class="fa-solid fa-redo"></i> Re-record
             </button>
-            <button class="btn-primary" id="btn-share-recording">
+            <button class="share-drop-btn" id="btn-share-recording">
               <i class="fa-solid fa-share"></i> Share
             </button>
           </div>
         </div>
-        <button class="btn-cancel" id="btn-cancel-record">Cancel</button>
+
+        <button class="btn-cancel-text" id="btn-cancel-record">Cancel</button>
       </div>
     </div>
 
-    <!-- Link panel -->
-    <div class="panel" id="link-panel" style="display:none">
-      <div class="panel-inner">
-        <h3><i class="fa-solid fa-link"></i> Share an Audio Link</h3>
-        <input type="url" id="link-url" placeholder="Paste audio URL (YouTube, SoundCloud, Spotify...)">
-        <textarea id="link-context" placeholder="How does this relate to today's theme? (optional)"></textarea>
-        <div class="panel-actions">
-          <button class="btn-secondary" id="btn-cancel-link">Cancel</button>
-          <button class="btn-primary" id="btn-share-link">Share</button>
+    <!-- Link Panel -->
+    <div class="recording-section" id="link-panel" style="display:none">
+      <div class="recorder-card">
+        <h3><i class="fa-solid fa-link"></i> Share Your Sound Link</h3>
+        <div class="link-input-group">
+          <label for="link-url">Audio Link:</label>
+          <input type="url" id="link-url" placeholder="https://youtube.com/watch?v=... or https://open.spotify.com/...">
+          <div class="supported-platforms">
+            <small>Supported: YouTube, Spotify, SoundCloud, Bandcamp, Freesound.org</small>
+          </div>
+        </div>
+        <textarea id="link-context" placeholder="How does this sound relate to today's theme?" rows="3" style="margin-bottom:15px;"></textarea>
+        <div class="recording-actions">
+          <button class="retake-btn" id="btn-cancel-link">Cancel</button>
+          <button class="share-drop-btn" id="btn-share-link">
+            <i class="fa-solid fa-share"></i> Share Link
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Drops list -->
-    <div id="drops-list"></div>
+    <div class="filter-tags">
+      <button class="filter-tag active" data-filter="all">All Drops</button>
+      <button class="filter-tag" data-filter="recorded">Recorded</button>
+      <button class="filter-tag" data-filter="uploaded">Uploaded</button>
+      <button class="filter-tag" data-filter="discussed">Most Discussed</button>
+    </div>
+
+    <div id="drops-list" class="sound-drops"></div>
 
   </div>
-
-  <script src="script.js"></script>
 </body>
 </html>
