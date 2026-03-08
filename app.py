@@ -43,19 +43,35 @@ mongo_client = None
 research_db = None
 
 def init_mongodb():
-    """Initialize MongoDB connection for research data archiving"""
+    """Initialize MongoDB connection. Resets on any failure so the next
+    request always retries rather than reusing a broken client object."""
     global mongo_client, research_db
-    try:
-        if mongo_client is None:
-            # You need to replace <db_password> with your actual password
-            mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-            # Test the connection
+    # If we already have a client, do a fast ping to confirm it's alive
+    if mongo_client is not None:
+        try:
             mongo_client.admin.command('ping')
-            research_db = mongo_client[MONGODB_DATABASE]
-            print("MongoDB connection established for research archiving")
+            return True
+        except Exception:
+            # Connection is stale – reset and fall through to reconnect
+            mongo_client = None
+            research_db = None
+
+    try:
+        mongo_client = MongoClient(
+            MONGODB_URI,
+            serverSelectionTimeoutMS=3000,   # fail fast on Vercel cold starts
+            connectTimeoutMS=3000,
+            socketTimeoutMS=5000,
+            retryWrites=True,
+        )
+        mongo_client.admin.command('ping')
+        research_db = mongo_client[MONGODB_DATABASE]
+        print("MongoDB connection established")
         return True
     except Exception as e:
         print(f"MongoDB connection failed: {e}")
+        mongo_client = None   # reset so next request retries cleanly
+        research_db = None
         return False
 
 def archive_to_research_db(drop_data):
