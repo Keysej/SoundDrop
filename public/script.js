@@ -117,6 +117,23 @@ function updateCountdown() {
   }
 }
 
+// ── Audio helpers ─────────────────────────────────────────────────────────────
+// Convert a base64 data URL → blob URL so the browser can stream it properly.
+// Data URLs embedded directly in <audio src> cause browsers to buffer only the
+// first few seconds before stopping — blob URLs don't have this problem.
+function dataURLtoObjectURL(dataURL) {
+  try {
+    const [header, b64] = dataURL.split(',');
+    const mime = header.match(/:(.*?);/)[1];
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch (e) {
+    return dataURL; // fall back to original if conversion fails
+  }
+}
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 async function loadTheme() {
   try {
@@ -218,8 +235,12 @@ function buildCard(drop) {
       <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Audio Link
     </a>`;
   } else if (drop.audioData) {
-    mediaHTML = `<audio class="drop-audio" controls preload="none">
-      <source src="${drop.audioData}">
+    // Convert base64 data URL → blob URL so browsers can stream the full file
+    const audioSrc = drop.audioData.startsWith('data:')
+      ? dataURLtoObjectURL(drop.audioData)
+      : drop.audioData;
+    mediaHTML = `<audio class="drop-audio" controls preload="metadata">
+      <source src="${audioSrc}">
       Your browser does not support audio playback.
     </audio>`;
   } else {
