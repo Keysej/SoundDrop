@@ -118,6 +118,7 @@ function updateCountdown() {
 }
 
 // ── Audio helpers ─────────────────────────────────────────────────────────────
+
 // Convert a base64 data URL → blob URL so the browser can stream it properly.
 // Data URLs embedded directly in <audio src> cause browsers to buffer only the
 // first few seconds before stopping — blob URLs don't have this problem.
@@ -132,6 +133,22 @@ function dataURLtoObjectURL(dataURL) {
   } catch (e) {
     return dataURL; // fall back to original if conversion fails
   }
+}
+
+// Fix WebM duration — MediaRecorder doesn't write duration metadata into WebM
+// files because the length isn't known at record time.  This tricks the browser
+// into scanning the whole file by seeking past the end, which makes it calculate
+// the real duration and show it in the seek bar.
+function fixAudioDuration(audioEl) {
+  if (!audioEl) return;
+  audioEl.addEventListener('loadedmetadata', () => {
+    if (!isFinite(audioEl.duration) || audioEl.duration === 0) {
+      audioEl.currentTime = 1e101;           // seek past the end
+      audioEl.addEventListener('timeupdate', () => {
+        audioEl.currentTime = 0;             // jump back to start
+      }, { once: true });
+    }
+  }, { once: true });
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -283,6 +300,9 @@ function buildCard(drop) {
     </div>
   `;
 
+  // Fix WebM duration so the seek bar shows real length instead of 0:00
+  fixAudioDuration(card.querySelector('.drop-audio'));
+
   card.querySelector('.btn-applaud').addEventListener('click', e =>
     handleApplaud(drop.id, e.currentTarget, card)
   );
@@ -432,8 +452,10 @@ async function startRecording() {
       }
 
       document.getElementById('recording-status').style.display = 'none';
-      document.getElementById('preview-audio').src              = URL.createObjectURL(currentBlob);
-      document.getElementById('preview-area').style.display     = 'block';
+      const previewAudio = document.getElementById('preview-audio');
+      previewAudio.src = URL.createObjectURL(currentBlob);
+      fixAudioDuration(previewAudio);
+      document.getElementById('preview-area').style.display = 'block';
     };
 
     mediaRecorder.start(100);
