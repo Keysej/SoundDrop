@@ -158,10 +158,17 @@ function fixAudioDuration(audioEl) {
   audioEl.addEventListener('error', () => {
     const downloadSrc = audioEl.dataset.download || audioEl.querySelector('source')?.src || '';
     const mime = audioEl.querySelector('source')?.type || 'audio';
-    const label = mime.includes('webm') ? 'WebM' : mime.includes('mp4') ? 'MP4' : mime.includes('ogg') ? 'OGG' : 'audio';
+    const ext   = mime.includes('webm') ? 'webm'
+                : mime.includes('mp4')  ? 'm4a'
+                : mime.includes('ogg')  ? 'ogg'
+                : mime.includes('mpeg') ? 'mp3'
+                : mime.includes('wav')  ? 'wav'
+                : 'audio';
+    const label = ext === 'webm' ? 'WebM' : ext === 'm4a' ? 'MP4' : ext.toUpperCase();
+    const filename = `sounddrop_recording.${ext}`;
     const downloadBtn = downloadSrc
-      ? `<a class="btn-download-audio" href="${downloadSrc}" download>
-           <i class="fa-solid fa-download"></i> Download to play
+      ? `<a class="btn-download-audio" href="${downloadSrc}" download="${filename}">
+           <i class="fa-solid fa-download"></i> Download to play (.${ext})
          </a>`
       : '';
     const wrapper = audioEl.parentElement;
