@@ -139,14 +139,39 @@ function dataURLtoObjectURL(dataURL) {
 // files because the length isn't known at record time.  This tricks the browser
 // into scanning the whole file by seeking past the end, which makes it calculate
 // the real duration and show it in the seek bar.
+// Also handles format-incompatibility errors (e.g. WebM on iOS Safari) by
+// swapping in a download link so the user can still access the audio.
 function fixAudioDuration(audioEl) {
   if (!audioEl) return;
+
+  // Duration fix
   audioEl.addEventListener('loadedmetadata', () => {
     if (!isFinite(audioEl.duration) || audioEl.duration === 0) {
-      audioEl.currentTime = 1e101;           // seek past the end
+      audioEl.currentTime = 1e101;
       audioEl.addEventListener('timeupdate', () => {
-        audioEl.currentTime = 0;             // jump back to start
+        audioEl.currentTime = 0;
       }, { once: true });
+    }
+  }, { once: true });
+
+  // Format-incompatibility fallback — fires when the browser can't decode the audio
+  audioEl.addEventListener('error', () => {
+    const downloadSrc = audioEl.dataset.download || audioEl.querySelector('source')?.src || '';
+    const mime = audioEl.querySelector('source')?.type || 'audio';
+    const label = mime.includes('webm') ? 'WebM' : mime.includes('mp4') ? 'MP4' : mime.includes('ogg') ? 'OGG' : 'audio';
+    const downloadBtn = downloadSrc
+      ? `<a class="btn-download-audio" href="${downloadSrc}" download>
+           <i class="fa-solid fa-download"></i> Download to play
+         </a>`
+      : '';
+    const wrapper = audioEl.parentElement;
+    if (wrapper) {
+      wrapper.innerHTML = `
+        <div class="audio-unsupported">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>${label} format not supported on this device.</span>
+          ${downloadBtn}
+        </div>`;
     }
   }, { once: true });
 }
@@ -256,8 +281,14 @@ function buildCard(drop) {
     const audioSrc = drop.audioData.startsWith('data:')
       ? dataURLtoObjectURL(drop.audioData)
       : drop.audioData;
-    mediaHTML = `<audio class="drop-audio" controls preload="metadata">
-      <source src="${audioSrc}">
+    const audioMime = drop.audioData.startsWith('data:')
+      ? mimeFromDataURL(drop.audioData)
+      : '';
+    // Include the type attribute so browsers can immediately detect format incompatibility
+    // (e.g. Safari sees "audio/webm" and fires error instead of silently failing)
+    const typeAttr = audioMime ? ` type="${audioMime}"` : '';
+    mediaHTML = `<audio class="drop-audio" controls preload="metadata" data-download="${audioSrc}">
+      <source src="${audioSrc}"${typeAttr}>
       Your browser does not support audio playback.
     </audio>`;
   } else {
@@ -389,10 +420,13 @@ async function handleComment(dropId, text, card) {
 // ── Recording ─────────────────────────────────────────────────────────────────
 function getBestMimeType() {
   const candidates = [
-    'audio/webm;codecs=opus',  // Chrome, Edge, Firefox
+    // MP4/AAC is the most universally playable format (Safari, Chrome, iOS, Android).
+    // Try it first so recordings made on Chrome 108+/Android are playable everywhere.
+    'audio/mp4;codecs=aac',
+    'audio/mp4',
+    'audio/webm;codecs=opus',  // Chrome desktop fallback
     'audio/webm',
-    'audio/mp4',               // Safari macOS + iOS 14.3+
-    'audio/ogg;codecs=opus',   // Firefox
+    'audio/ogg;codecs=opus',   // Firefox fallback
     'audio/ogg',
   ];
   if (typeof MediaRecorder === 'undefined') return '';
@@ -400,6 +434,11 @@ function getBestMimeType() {
     if (MediaRecorder.isTypeSupported(t)) return t;
   }
   return '';
+}
+
+// Extract bare MIME type from a data URL (e.g. "audio/webm" from "data:audio/webm;base64,...")
+function mimeFromDataURL(dataURL) {
+  try { return dataURL.split(',')[0].split(':')[1].split(';')[0]; } catch { return ''; }
 }
 
 function getExtFromMime(mimeType) {

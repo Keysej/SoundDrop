@@ -633,6 +633,41 @@ body {
   font-style: italic;
 }
 
+/* ── Audio format unsupported (e.g. WebM on iOS Safari) ─────────────────────── */
+.audio-unsupported {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85em;
+  color: #795548;
+}
+
+.audio-unsupported i {
+  color: #f9a825;
+}
+
+.btn-download-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  background: #6c63ff;
+  color: #fff;
+  border-radius: 20px;
+  font-size: 0.85em;
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.btn-download-audio:hover {
+  background: #574fd6;
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
