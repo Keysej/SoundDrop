@@ -618,7 +618,7 @@ async function shareRecording() {
       toast('Network error. Try again.', 'error');
     }
   };
-  reader.readAsDataURL(currentBlob);
+  reader.readAsDataURL(uploadBlob);
 }
 
 // ── File upload ───────────────────────────────────────────────────────────────
@@ -730,7 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Step 3: Load fresh data from server (replaces/merges with cache) ───────
   loadTheme();
   loadDrops();
-  setInterval(loadDrops, 30000);   // refresh every 30 s (was 60 s)
+  setInterval(loadDrops, 10000);   // refresh every 10 s
 
   // ── Filter tabs ────────────────────────────────────────────────────────────
   document.querySelectorAll('.filter-tag').forEach(btn => {
