@@ -538,15 +538,59 @@ function resetRecording() {
   currentBlob = null;
 }
 
+// Convert any recorded audio blob to MP3 so it plays on every browser/device.
+// Uses Web Audio API to decode the raw PCM, then LameJS to encode as MP3.
+async function transcodeToMP3(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx    = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  await audioCtx.close();
+
+  const samples    = audioBuffer.getChannelData(0); // mono
+  const sampleRate = audioBuffer.sampleRate;
+  const mp3enc     = new lamejs.Mp3Encoder(1, sampleRate, 128);
+  const mp3parts   = [];
+  const blockSize  = 1152; // required by LameJS
+
+  for (let i = 0; i < samples.length; i += blockSize) {
+    const chunk  = samples.subarray(i, i + blockSize);
+    const int16  = new Int16Array(chunk.length);
+    for (let j = 0; j < chunk.length; j++) {
+      int16[j] = Math.max(-32768, Math.min(32767, Math.round(chunk[j] * 32767)));
+    }
+    const encoded = mp3enc.encodeBuffer(int16);
+    if (encoded.length > 0) mp3parts.push(new Uint8Array(encoded));
+  }
+  const flushed = mp3enc.flush();
+  if (flushed.length > 0) mp3parts.push(new Uint8Array(flushed));
+
+  return new Blob(mp3parts, { type: 'audio/mpeg' });
+}
+
 async function shareRecording() {
   if (!currentBlob) return;
   const context = document.getElementById('record-context').value.trim();
+
+  // Convert to MP3 before uploading so every device can play it back.
+  // Skip if already a universally compatible format (mp4/mp3).
+  let uploadBlob = currentBlob;
+  const alreadyCompat = currentBlob.type.includes('mp4') || currentBlob.type.includes('mpeg');
+  if (!alreadyCompat && typeof lamejs !== 'undefined') {
+    toast('Converting for cross-device playback…');
+    try {
+      uploadBlob = await transcodeToMP3(currentBlob);
+    } catch (e) {
+      console.warn('MP3 transcode failed, using original format:', e);
+      uploadBlob = currentBlob;
+    }
+  }
+
   toast('Sharing...');
 
   const reader = new FileReader();
   reader.onload = async () => {
     try {
-      const ext = getExtFromMime(currentBlob.type);
+      const ext = uploadBlob.type.includes('mpeg') ? 'mp3' : getExtFromMime(uploadBlob.type);
       const res = await apiFetch('/api/sound-drops', {
         method: 'POST',
         body: JSON.stringify({
