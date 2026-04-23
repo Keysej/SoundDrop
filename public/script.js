@@ -287,25 +287,28 @@ function buildCard(drop) {
       <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Audio Link
     </a>`;
   } else if (drop.audioData) {
-    // Convert base64 data URL → blob URL so browsers can stream the full file
+    // In-memory audioData from a fresh upload — convert to blob URL for streaming
     const audioSrc = drop.audioData.startsWith('data:')
       ? dataURLtoObjectURL(drop.audioData)
       : drop.audioData;
     const audioMime = drop.audioData.startsWith('data:')
       ? mimeFromDataURL(drop.audioData)
       : '';
-    // Include the type attribute so browsers can immediately detect format incompatibility
-    // (e.g. Safari sees "audio/webm" and fires error instead of silently failing)
     const typeAttr = audioMime ? ` type="${audioMime}"` : '';
     mediaHTML = `<audio class="drop-audio" controls preload="metadata" data-download="${audioSrc}">
       <source src="${audioSrc}"${typeAttr}>
       Your browser does not support audio playback.
     </audio>`;
   } else {
-    // Metadata loaded from cache; audio arrives with next server fetch (~1–2s)
-    mediaHTML = `<div class="audio-loading">
-      <i class="fa-solid fa-spinner fa-spin"></i> Audio loading…
-    </div>`;
+    // Fetch audio on demand from the streaming endpoint.
+    // The list response no longer carries base64 audio (too large), so we point
+    // the audio element directly at the per-drop audio URL. The browser fetches
+    // it when the user presses play, with full range-request / seek support.
+    const audioUrl = `/api/sound-drops/${drop.id}/audio`;
+    mediaHTML = `<audio class="drop-audio" controls preload="metadata" data-download="${audioUrl}">
+      <source src="${audioUrl}">
+      Your browser does not support audio playback.
+    </audio>`;
   }
 
   card.innerHTML = `

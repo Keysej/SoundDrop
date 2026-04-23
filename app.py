@@ -1162,16 +1162,72 @@ def get_group_stats(group_code):
 
 @app.route('/api/sound-drops', methods=['GET'])
 def get_sound_drops():
-    # Get group parameter from query string
     group_code = request.args.get('group', 'default')
-    
     drops = load_sound_drops()
-    
-    # Filter drops by group
-    if group_code != 'all':  # 'all' is for admin access
+    if group_code != 'all':
         drops = [drop for drop in drops if drop.get('group_code', 'default') == group_code]
-    
+    # Strip audio payload from list response — audio is fetched on demand via
+    # /api/sound-drops/<id>/audio so the list response stays small and fast.
+    # Link drops store their URL in audioData, so we keep it for those.
+    for drop in drops:
+        if drop.get('type') != 'link':
+            drop.pop('audioData', None)
     return jsonify(drops)
+
+@app.route('/api/sound-drops/<int:drop_id>/audio', methods=['GET'])
+def get_audio(drop_id):
+    """Stream audio binary for a single drop. Supports HTTP Range requests
+    so browsers can seek within the audio without downloading the whole file."""
+    try:
+        import re as _re
+        from flask import Response as _Response
+
+        # Fetch the specific drop directly from MongoDB to avoid loading all drops
+        drop = None
+        if init_mongodb():
+            doc = research_db.active_sounds.find_one({'id': drop_id})
+            if doc:
+                doc.pop('_id', None)
+                drop = doc
+        # Fallback to file storage
+        if drop is None:
+            all_drops = load_sound_drops()
+            drop = next((d for d in all_drops if d['id'] == drop_id), None)
+
+        if not drop or not drop.get('audioData'):
+            return jsonify({'error': 'Audio not found'}), 404
+
+        audio_data_url = drop['audioData']
+        if not audio_data_url.startswith('data:'):
+            return jsonify({'error': 'Invalid audio format'}), 400
+
+        header, b64data = audio_data_url.split(',', 1)
+        mime_type = header.split(':')[1].split(';')[0]
+        audio_bytes = base64.b64decode(b64data)
+        total = len(audio_bytes)
+
+        range_header = request.headers.get('Range')
+        if range_header:
+            m = _re.match(r'bytes=(\d+)-(\d*)', range_header)
+            if m:
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else total - 1
+                end = min(end, total - 1)
+                chunk = audio_bytes[start:end + 1]
+                return _Response(chunk, status=206, mimetype=mime_type, headers={
+                    'Content-Range': f'bytes {start}-{end}/{total}',
+                    'Content-Length': str(len(chunk)),
+                    'Accept-Ranges': 'bytes',
+                    'Cache-Control': 'no-cache',
+                })
+
+        return _Response(audio_bytes, mimetype=mime_type, headers={
+            'Content-Length': str(total),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-cache',
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/sound-drops', methods=['GET'])
 def get_admin_sound_drops():
