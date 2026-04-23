@@ -208,10 +208,13 @@ async function loadDrops() {
 
     // Merge: server data wins but we keep any local drops not yet on server
     drops = mergeWithCache(serverDrops);
-
-    renderDrops();
-    updateStats();
     saveCache();         // persist the fresh server data to cache
+
+    // Don't rebuild the card list while audio is playing — it destroys the
+    // audio element and cuts off playback. Stats still update.
+    const anyPlaying = Array.from(document.querySelectorAll('.drop-audio')).some(a => !a.paused);
+    if (!anyPlaying) renderDrops();
+    updateStats();
   } catch (e) {
     console.error('loadDrops failed:', e);
     // Server unreachable — keep showing whatever is in drops (already loaded from cache)
