@@ -1218,13 +1218,13 @@ def get_audio(drop_id):
                     'Content-Range': f'bytes {start}-{end}/{total}',
                     'Content-Length': str(len(chunk)),
                     'Accept-Ranges': 'bytes',
-                    'Cache-Control': 'no-cache',
+                    'Cache-Control': 'public, max-age=86400',
                 })
 
         return _Response(audio_bytes, mimetype=mime_type, headers={
             'Content-Length': str(total),
             'Accept-Ranges': 'bytes',
-            'Cache-Control': 'no-cache',
+            'Cache-Control': 'public, max-age=86400',
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

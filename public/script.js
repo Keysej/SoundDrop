@@ -144,13 +144,19 @@ function dataURLtoObjectURL(dataURL) {
 function fixAudioDuration(audioEl) {
   if (!audioEl) return;
 
-  // Duration fix
+  // Duration fix — seeking to 1e101 forces the browser to scan to the end of
+  // the file and back-calculate the real duration. Only works for blob: URLs
+  // (data already in memory). For http: URLs the browser needs range requests
+  // which may not be reliable; use preload="auto" on those elements instead.
   audioEl.addEventListener('loadedmetadata', () => {
     if (!isFinite(audioEl.duration) || audioEl.duration === 0) {
-      audioEl.currentTime = 1e101;
-      audioEl.addEventListener('timeupdate', () => {
-        audioEl.currentTime = 0;
-      }, { once: true });
+      const src = audioEl.querySelector('source')?.src || audioEl.src || '';
+      if (src.startsWith('blob:')) {
+        audioEl.currentTime = 1e101;
+        audioEl.addEventListener('timeupdate', () => {
+          audioEl.currentTime = 0;
+        }, { once: true });
+      }
     }
   }, { once: true });
 
@@ -300,12 +306,12 @@ function buildCard(drop) {
       Your browser does not support audio playback.
     </audio>`;
   } else {
-    // Fetch audio on demand from the streaming endpoint.
-    // The list response no longer carries base64 audio (too large), so we point
-    // the audio element directly at the per-drop audio URL. The browser fetches
-    // it when the user presses play, with full range-request / seek support.
+    // Fetch audio from the streaming endpoint. Use preload="auto" so the browser
+    // downloads the full file on load — this is required to show the real duration
+    // (0:00 appears when only metadata is fetched but duration can't be inferred).
+    // The server sends Cache-Control headers so re-renders don't cause re-downloads.
     const audioUrl = `/api/sound-drops/${drop.id}/audio`;
-    mediaHTML = `<audio class="drop-audio" controls preload="metadata" data-download="${audioUrl}">
+    mediaHTML = `<audio class="drop-audio" controls preload="auto" data-download="${audioUrl}">
       <source src="${audioUrl}">
       Your browser does not support audio playback.
     </audio>`;
