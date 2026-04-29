@@ -1381,46 +1381,32 @@ def toggle_applaud(drop_id):
     try:
         data = request.get_json()
         applaud = data.get('applaud', True)
-        
-        # Rate limiting: Get client IP for basic protection
-        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', 'unknown'))
-        
-        # Load existing drops
+        inc = 1 if applaud else -1
+
+        if init_mongodb():
+            # Atomic increment — avoids loading/saving all drops (which timeouts
+            # when drops contain large audio payloads).
+            filter_q = {'id': drop_id}
+            if not applaud:
+                filter_q['applauds'] = {'$gt': 0}   # don't go below 0
+            research_db.active_sounds.update_one(
+                filter_q,
+                [{'$set': {'applauds': {'$max': [0, {'$add': [{'$ifNull': ['$applauds', 0]}, inc]}]}}}]
+            )
+            doc = research_db.active_sounds.find_one({'id': drop_id}, {'applauds': 1})
+            if not doc:
+                return jsonify({'error': 'Sound drop not found'}), 404
+            return jsonify({'message': 'Applaud updated!', 'applauds': doc.get('applauds', 0)})
+
+        # File-storage fallback (single-instance only)
         drops = load_sound_drops()
-        
-        # Find the target drop
-        target_drop = None
-        for drop in drops:
-            if drop['id'] == drop_id:
-                target_drop = drop
-                break
-        
-        if not target_drop:
+        target = next((d for d in drops if d['id'] == drop_id), None)
+        if not target:
             return jsonify({'error': 'Sound drop not found'}), 404
-        
-        # Initialize applauds if not exists or was incorrectly stored as a list
-        if 'applauds' not in target_drop or isinstance(target_drop['applauds'], list):
-            target_drop['applauds'] = 0
-        
-        # Reasonable applaud limits for research integrity
-        if applaud and target_drop['applauds'] >= 100:
-            return jsonify({'error': 'This sound has reached the maximum applaud limit (100). Thank you for your enthusiasm!'}), 400
-        
-        # Update applaud count
-        if applaud:
-            target_drop['applauds'] += 1
-        else:
-            target_drop['applauds'] = max(0, target_drop['applauds'] - 1)
-        
-        # Save back to storage
-        if save_sound_drops(drops):
-            return jsonify({
-                'message': 'Applaud updated successfully!',
-                'applauds': target_drop['applauds']
-            })
-        else:
-            return jsonify({'error': 'Failed to save applaud'}), 500
-        
+        target['applauds'] = max(0, int(target.get('applauds', 0)) + inc)
+        save_sound_drops(drops)
+        return jsonify({'message': 'Applaud updated!', 'applauds': target['applauds']})
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1428,36 +1414,36 @@ def toggle_applaud(drop_id):
 def add_discussion(drop_id):
     try:
         data = request.get_json()
-        
         if not data or 'text' not in data:
             return jsonify({'error': 'No comment text provided'}), 400
-        
-        # Load drops and find the specific one
-        drops = load_sound_drops()
-        drop_index = next((i for i, d in enumerate(drops) if d['id'] == drop_id), None)
-        
-        if drop_index is None:
-            return jsonify({'error': 'Sound drop not found'}), 404
-        
-        # Add comment
+
         comment = {
             'id': int(datetime.datetime.now().timestamp() * 1000),
             'timestamp': int(datetime.datetime.now().timestamp() * 1000),
             'text': data['text'],
             'author': data.get('author', 'A Group Member')
         }
-        
-        drops[drop_index]['discussions'].append(comment)
-        
-        # Save back to storage
-        if save_sound_drops(drops):
-            return jsonify({
-                'message': 'Comment added successfully!',
-                'comment': comment
-            })
-        else:
-            return jsonify({'error': 'Failed to save comment'}), 500
-        
+
+        if init_mongodb():
+            # Atomic push — avoids loading/saving all drops (would timeout
+            # because each drop contains a large audio payload).
+            result = research_db.active_sounds.update_one(
+                {'id': drop_id},
+                {'$push': {'discussions': comment}}
+            )
+            if result.matched_count == 0:
+                return jsonify({'error': 'Sound drop not found'}), 404
+            return jsonify({'message': 'Comment added!', 'comment': comment})
+
+        # File-storage fallback
+        drops = load_sound_drops()
+        idx = next((i for i, d in enumerate(drops) if d['id'] == drop_id), None)
+        if idx is None:
+            return jsonify({'error': 'Sound drop not found'}), 404
+        drops[idx]['discussions'].append(comment)
+        save_sound_drops(drops)
+        return jsonify({'message': 'Comment added!', 'comment': comment})
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

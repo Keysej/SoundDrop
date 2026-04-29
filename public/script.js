@@ -307,12 +307,20 @@ function buildCard(drop) {
     </audio>`;
   } else {
     // Fetch audio from the streaming endpoint. Use preload="auto" so the browser
-    // downloads the full file on load — this is required to show the real duration
-    // (0:00 appears when only metadata is fetched but duration can't be inferred).
-    // The server sends Cache-Control headers so re-renders don't cause re-downloads.
+    // downloads the full file on load — this is required to show the real duration.
+    // The <source type> attribute is required by Safari to recognise the format
+    // before fetching; derive it from the stored filename extension.
     const audioUrl = `/api/sound-drops/${drop.id}/audio`;
+    const fname = (drop.filename || '').toLowerCase();
+    const srcMime = fname.endsWith('.mp3')  ? 'audio/mpeg'
+                  : fname.endsWith('.m4a')  ? 'audio/mp4'
+                  : fname.endsWith('.mp4')  ? 'audio/mp4'
+                  : fname.endsWith('.ogg')  ? 'audio/ogg'
+                  : fname.endsWith('.wav')  ? 'audio/wav'
+                  : fname.endsWith('.webm') ? 'audio/webm'
+                  : 'audio/mpeg';            // default: assume MP3 (LameJS output)
     mediaHTML = `<audio class="drop-audio" controls preload="auto" data-download="${audioUrl}">
-      <source src="${audioUrl}">
+      <source src="${audioUrl}" type="${srcMime}">
       Your browser does not support audio playback.
     </audio>`;
   }
