@@ -2,6 +2,29 @@
 
 const GROUP = localStorage.getItem('sounddrop_group') || 'default';
 
+// Safari requires blob: URLs for reliable audio playback and duration display.
+// Vercel serverless responses use chunked transfer encoding (no Content-Length),
+// so Safari can't compute CBR MP3 duration from file-size/bitrate. We detect
+// Safari once and upgrade API-URL audio elements to blob URLs after fetching.
+const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+function upgradeAudioToBlob(audioEl) {
+  const url  = audioEl.dataset.url;
+  const mime = audioEl.dataset.mime || 'audio/mpeg';
+  if (!url) return;
+  fetch(url)
+    .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+    .then(buf => {
+      const blobUrl = URL.createObjectURL(new Blob([buf], { type: mime }));
+      const src = audioEl.querySelector('source');
+      if (src) src.src = blobUrl;
+      audioEl.dataset.download = blobUrl;
+      audioEl.load();
+      fixAudioDuration(audioEl);  // re-attach after load() resets the element
+    })
+    .catch(() => {}); // keep the original URL on any failure
+}
+
 let mediaRecorder = null;
 let audioChunks    = [];
 let timerInterval  = null;
@@ -318,8 +341,9 @@ function buildCard(drop) {
                   : fname.endsWith('.ogg')  ? 'audio/ogg'
                   : fname.endsWith('.wav')  ? 'audio/wav'
                   : fname.endsWith('.webm') ? 'audio/webm'
-                  : 'audio/mpeg';            // default: assume MP3 (LameJS output)
-    mediaHTML = `<audio class="drop-audio" controls preload="auto" data-download="${audioUrl}">
+                  : 'audio/mpeg';
+    mediaHTML = `<audio class="drop-audio" controls preload="auto"
+        data-download="${audioUrl}" data-url="${audioUrl}" data-mime="${srcMime}">
       <source src="${audioUrl}" type="${srcMime}">
       Your browser does not support audio playback.
     </audio>`;
@@ -359,7 +383,11 @@ function buildCard(drop) {
   `;
 
   // Fix WebM duration so the seek bar shows real length instead of 0:00
-  fixAudioDuration(card.querySelector('.drop-audio'));
+  const cardAudio = card.querySelector('.drop-audio');
+  fixAudioDuration(cardAudio);
+  // Safari can't determine duration from chunked-encoded HTTP responses.
+  // Fetch the audio as an ArrayBuffer and swap to a blob: URL instead.
+  if (IS_SAFARI && cardAudio && cardAudio.dataset.url) upgradeAudioToBlob(cardAudio);
 
   card.querySelector('.btn-applaud').addEventListener('click', e =>
     handleApplaud(drop.id, e.currentTarget, card)
