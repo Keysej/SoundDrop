@@ -443,32 +443,50 @@ async function handleApplaud(dropId, btn, card) {
 
 // ── Comments ──────────────────────────────────────────────────────────────────
 async function handleComment(dropId, text, card) {
-  try {
-    const res = await apiFetch(`/api/sound-drops/${dropId}/discussion`, {
-      method: 'POST',
-      body: JSON.stringify({ text, author: 'A Group Member' })
-    });
-    if (res.ok) {
-      const el = document.createElement('div');
-      el.className = 'comment-item';
-      el.innerHTML = `<div class="comment-author">A Group Member</div>${text}`;
-      card.querySelector('.comments-list').appendChild(el);
+  // Retry once after 1.5 s — Vercel cold-starts can cause a transient MongoDB
+  // timeout on the first request; a single retry covers that case silently.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await apiFetch(`/api/sound-drops/${dropId}/discussion`, {
+        method: 'POST',
+        body: JSON.stringify({ text, author: 'A Group Member' })
+      });
 
-      const drop = drops.find(d => d.id == dropId);
-      if (drop) {
-        drop.discussions = drop.discussions || [];
-        drop.discussions.push({ text, author: 'A Group Member' });
-        const span = card.querySelector('.comment-count');
-        span.textContent = `${drop.discussions.length} comment${drop.discussions.length !== 1 ? 's' : ''}`;
-        updateStats();
-        saveCache();    // persist the new comment to cache
+      if (res.ok) {
+        const el = document.createElement('div');
+        el.className = 'comment-item';
+        el.innerHTML = `<div class="comment-author">A Group Member</div>${text}`;
+        const list = card.querySelector('.comments-list');
+        if (list) list.appendChild(el);
+
+        const drop = drops.find(d => d.id == dropId);
+        if (drop) {
+          drop.discussions = drop.discussions || [];
+          drop.discussions.push({ text, author: 'A Group Member' });
+          const span = card.querySelector('.comment-count');
+          if (span) span.textContent = `${drop.discussions.length} comment${drop.discussions.length !== 1 ? 's' : ''}`;
+          updateStats();
+          saveCache();
+        }
+        toast('Comment posted!', 'success');
+        return;
       }
-      toast('Comment posted!', 'success');
-    } else {
-      toast('Failed to post comment.', 'error');
+
+      // Non-ok on first attempt — wait and retry
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 1500));
+        continue;
+      }
+      toast('Failed to post comment. Please try again.', 'error');
+      return;
+
+    } catch (e) {
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 1500));
+        continue;
+      }
+      toast('Network error. Please try again.', 'error');
     }
-  } catch (e) {
-    toast('Network error.', 'error');
   }
 }
 
