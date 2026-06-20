@@ -255,10 +255,6 @@
           <label style="font-weight: 600; color: #2c3e50;">View data for:</label>
           <select id="group-filter" style="padding: 8px 15px; border: 2px solid #667eea; border-radius: 8px; font-size: 14px; background: white;">
             <option value="all">All Groups</option>
-            <option value="default">General Study</option>
-            <option value="group_a">Morning Focus Group</option>
-            <option value="group_b">Evening Reflection Group</option>
-            <option value="control">Control Group</option>
           </select>
           <button id="refresh-data-btn" style="background: #28a745; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: 600;">
             🔄 Refresh Data
@@ -327,11 +323,33 @@
         adminAuthenticated = true;
         document.getElementById('login-section').style.display = 'none';
         document.getElementById('dashboard-section').style.display = 'block';
+        loadGroupOptions();
         loadDashboardData();
         errorDiv.style.display = 'none';
       } else {
         errorDiv.textContent = 'Invalid password. Please try again.';
         errorDiv.style.display = 'block';
+      }
+    }
+
+    async function loadGroupOptions() {
+      try {
+        const resp = await fetch('/api/admin/groups', {
+          headers: { 'Authorization': 'Bearer research2024' }
+        });
+        if (!resp.ok) return;
+        const groups = await resp.json();
+        const select = document.getElementById('group-filter');
+        // Keep the "All Groups" option, then add discovered groups
+        select.innerHTML = '<option value="all">All Groups</option>';
+        groups.forEach(g => {
+          const opt = document.createElement('option');
+          opt.value = g;
+          opt.textContent = g === 'default' ? 'General (no group)' : g.charAt(0).toUpperCase() + g.slice(1);
+          select.appendChild(opt);
+        });
+      } catch (e) {
+        console.log('Could not load group list:', e);
       }
     }
 

@@ -1,6 +1,43 @@
 // SoundDrop – clean rewrite
 
-const GROUP = localStorage.getItem('sounddrop_group') || 'default';
+// ── Group system ──────────────────────────────────────────────────────────────
+// Users create/join groups inside the app (WhatsApp-style).
+// ?group= URL links still work for backwards compat — they auto-join + activate.
+(function () {
+  const params   = new URLSearchParams(window.location.search);
+  const urlGroup = (params.get('group') || '').trim();
+  if (urlGroup) {
+    const existing = JSON.parse(localStorage.getItem('sounddrop_groups') || '[]');
+    if (!existing.find(g => g.code === urlGroup)) {
+      const name = urlGroup.charAt(0).toUpperCase() + urlGroup.slice(1).replace(/-/g, ' ');
+      existing.push({ name, code: urlGroup });
+      localStorage.setItem('sounddrop_groups', JSON.stringify(existing));
+    }
+    localStorage.setItem('sounddrop_active_group', urlGroup);
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('group');
+    window.history.replaceState({}, '', clean.toString());
+  }
+  // Migrate old single-group key to new groups list
+  const oldGroup = localStorage.getItem('sounddrop_group');
+  if (oldGroup && oldGroup !== 'default') {
+    const existing = JSON.parse(localStorage.getItem('sounddrop_groups') || '[]');
+    if (!existing.find(g => g.code === oldGroup)) {
+      const name = oldGroup.charAt(0).toUpperCase() + oldGroup.slice(1).replace(/-/g, ' ');
+      existing.push({ name, code: oldGroup });
+      localStorage.setItem('sounddrop_groups', JSON.stringify(existing));
+    }
+    if (!localStorage.getItem('sounddrop_active_group')) {
+      localStorage.setItem('sounddrop_active_group', oldGroup);
+    }
+    localStorage.removeItem('sounddrop_group');
+  }
+}());
+
+function getGroups()       { try { return JSON.parse(localStorage.getItem('sounddrop_groups') || '[]'); } catch { return []; } }
+function saveGroups(g)     { localStorage.setItem('sounddrop_groups', JSON.stringify(g)); }
+function getActiveGroup()  { return localStorage.getItem('sounddrop_active_group') || 'default'; }
+function setActiveGroup(c) { localStorage.setItem('sounddrop_active_group', c); }
 
 // Safari requires blob: URLs for reliable audio playback and duration display.
 // Vercel serverless responses use chunked transfer encoding (no Content-Length),
@@ -35,11 +72,8 @@ let currentFilter  = 'all';
 let dropsCleared   = false;
 
 // ── Local cache ───────────────────────────────────────────────────────────────
-// Drops are cached in localStorage so they survive page refreshes even if the
-// server is slow or has a cold start.  Audio base64 is stripped (too large) but
-// link URLs are kept.  The audio element shows a "loading" placeholder until the
-// server response fills it in.
-const CACHE_KEY = `sounddrop_drops_${GROUP}`;
+// Per-group cache so switching groups shows the right drops instantly.
+function getCacheKey() { return `sounddrop_drops_${getActiveGroup()}`; }
 
 function saveCache() {
   try {
@@ -48,7 +82,7 @@ function saveCache() {
       const { audioData, ...rest } = d;              // strip base64 to save space
       return rest;
     });
-    localStorage.setItem(CACHE_KEY, JSON.stringify(lite));
+    localStorage.setItem(getCacheKey(), JSON.stringify(lite));
   } catch (e) {
     // If localStorage is full, silently ignore
   }
@@ -56,7 +90,7 @@ function saveCache() {
 
 function loadCache() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(getCacheKey());
     if (!raw) return [];
     const cached = JSON.parse(raw);
     const midnight = new Date();
@@ -74,6 +108,12 @@ function mergeWithCache(serverDrops) {
   // Keep any locally-cached drops not yet in the server response
   const localOnly = drops.filter(d => !serverIds.has(String(d.id)));
   return [...serverDrops, ...localOnly];
+}
+
+// ── Group badge (retired — replaced by group-tabs-bar) ────────────────────────
+function updateGroupBadge() {
+  const badge = document.getElementById('group-badge');
+  if (badge) badge.style.display = 'none';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -128,7 +168,7 @@ function updateCountdown() {
   if (h === 0 && m === 0 && s === 0 && !dropsCleared) {
     dropsCleared = true;
     drops = [];
-    localStorage.removeItem(CACHE_KEY);   // wipe today's cache at midnight
+    localStorage.removeItem(getCacheKey());
     renderDrops();
     updateStats();
     toast('Sounds have disappeared — new theme starts now!', 'success');
@@ -215,7 +255,7 @@ function fixAudioDuration(audioEl) {
 // ── Theme ─────────────────────────────────────────────────────────────────────
 async function loadTheme() {
   try {
-    const res = await apiFetch(`/api/theme?group=${GROUP}`);
+    const res = await apiFetch(`/api/theme?group=${getActiveGroup()}`);
     if (!res.ok) return;
     const t = await res.json();
     document.getElementById('theme-title').textContent       = t.title;
@@ -226,7 +266,7 @@ async function loadTheme() {
 // ── Drops ─────────────────────────────────────────────────────────────────────
 async function loadDrops() {
   try {
-    const res = await apiFetch(`/api/sound-drops?group=${GROUP}`);
+    const res = await apiFetch(`/api/sound-drops?group=${getActiveGroup()}`);
     if (!res.ok) return;
     const all = await res.json();
 
@@ -568,6 +608,7 @@ async function startRecording() {
       previewAudio.src = URL.createObjectURL(currentBlob);
       fixAudioDuration(previewAudio);
       document.getElementById('preview-area').style.display = 'block';
+      populateGroupSelects();
     };
 
     mediaRecorder.start(100);
@@ -609,7 +650,10 @@ function resetRecording() {
 async function transcodeToMP3(blob) {
   const arrayBuffer = await blob.arrayBuffer();
   const audioCtx    = new (window.AudioContext || window.webkitAudioContext)();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  // Wrap in Promise so this works whether the browser returns a Promise or uses callbacks only.
+  const audioBuffer = await new Promise((resolve, reject) => {
+    audioCtx.decodeAudioData(arrayBuffer, resolve, reject);
+  });
   await audioCtx.close();
 
   const samples    = audioBuffer.getChannelData(0); // mono
@@ -635,19 +679,27 @@ async function transcodeToMP3(blob) {
 
 async function shareRecording() {
   if (!currentBlob) return;
-  const context = document.getElementById('record-context').value.trim();
+  const context   = document.getElementById('record-context').value.trim();
+  const groupCode = document.getElementById('record-group-select')?.value || getActiveGroup();
 
   // Convert to MP3 before uploading so every device can play it back.
   // Skip if already a universally compatible format (mp4/mp3).
   let uploadBlob = currentBlob;
   const alreadyCompat = currentBlob.type.includes('mp4') || currentBlob.type.includes('mpeg');
-  if (!alreadyCompat && typeof lamejs !== 'undefined') {
+  if (!alreadyCompat) {
+    if (typeof lamejs === 'undefined') {
+      toast('Audio encoder not loaded — please refresh and try again.', 'error');
+      return;
+    }
     toast('Converting for cross-device playback…');
     try {
-      uploadBlob = await transcodeToMP3(currentBlob);
+      const transcoded = await transcodeToMP3(currentBlob);
+      if (transcoded.size < 1000) throw new Error('Transcode produced empty output');
+      uploadBlob = transcoded;
     } catch (e) {
-      console.warn('MP3 transcode failed, using original format:', e);
-      uploadBlob = currentBlob;
+      console.error('MP3 transcode failed:', e);
+      toast('Could not convert audio — please refresh and try again.', 'error');
+      return;
     }
   }
 
@@ -664,7 +716,7 @@ async function shareRecording() {
           context,
           type:       'recorded',
           filename:   `recording_${Date.now()}.${ext}`,
-          group_code: GROUP
+          group_code: groupCode
         })
       });
 
@@ -672,11 +724,15 @@ async function shareRecording() {
         const data = await res.json();
         hidePanel('recording-panel');
         resetRecording();
-        drops.unshift(data.drop);
-        renderDrops();
-        updateStats();
-        saveCache();    // persist new drop immediately
-        toast('Sound shared!', 'success');
+        if (groupCode === getActiveGroup()) {
+          drops.unshift(data.drop);
+          renderDrops();
+          updateStats();
+          saveCache();
+        }
+        const targetName = getGroups().find(g => g.code === groupCode)?.name
+          || (groupCode === 'default' ? 'Everyone' : groupCode);
+        toast(`Sound shared to ${targetName}!`, 'success');
       } else {
         toast('Failed to share. Try again.', 'error');
       }
@@ -688,14 +744,26 @@ async function shareRecording() {
 }
 
 // ── File upload ───────────────────────────────────────────────────────────────
-async function handleUpload(file) {
-  if (!file) return;
-  if (file.size > 50 * 1024 * 1024) {
-    toast('File too large (max 50 MB)', 'error');
-    return;
-  }
+let pendingUploadFile = null;
 
-  const context = prompt('Add a note about this sound (optional):') || '';
+function openUploadPanel(file) {
+  if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { toast('File too large (max 50 MB)', 'error'); return; }
+  pendingUploadFile = file;
+  const nameEl = document.getElementById('upload-filename');
+  if (nameEl) nameEl.textContent = file.name;
+  document.getElementById('upload-context').value = '';
+  populateGroupSelects();
+  showPanel('upload-panel');
+}
+
+async function confirmUpload() {
+  if (!pendingUploadFile) return;
+  const file      = pendingUploadFile;
+  const context   = document.getElementById('upload-context').value.trim();
+  const groupCode = document.getElementById('upload-group-select')?.value || getActiveGroup();
+  pendingUploadFile = null;
+  hidePanel('upload-panel');
   toast('Uploading...');
 
   const reader = new FileReader();
@@ -708,17 +776,20 @@ async function handleUpload(file) {
           context,
           type:       'uploaded',
           filename:   file.name,
-          group_code: GROUP
+          group_code: groupCode
         })
       });
-
       if (res.ok) {
         const data = await res.json();
-        drops.unshift(data.drop);
-        renderDrops();
-        updateStats();
-        saveCache();    // persist new drop immediately
-        toast('Sound uploaded!', 'success');
+        if (groupCode === getActiveGroup()) {
+          drops.unshift(data.drop);
+          renderDrops();
+          updateStats();
+          saveCache();
+        }
+        const targetName = getGroups().find(g => g.code === groupCode)?.name
+          || (groupCode === 'default' ? 'Everyone' : groupCode);
+        toast(`Sound uploaded to ${targetName}!`, 'success');
       } else {
         toast('Upload failed. Try again.', 'error');
       }
@@ -731,8 +802,9 @@ async function handleUpload(file) {
 
 // ── Share link ────────────────────────────────────────────────────────────────
 async function shareLink() {
-  const url     = document.getElementById('link-url').value.trim();
-  const context = document.getElementById('link-context').value.trim();
+  const url       = document.getElementById('link-url').value.trim();
+  const context   = document.getElementById('link-context').value.trim();
+  const groupCode = document.getElementById('link-group-select')?.value || getActiveGroup();
 
   if (!url) { toast('Please enter a URL', 'error'); return; }
   try { new URL(url); } catch { toast('Please enter a valid URL', 'error'); return; }
@@ -747,7 +819,7 @@ async function shareLink() {
         context,
         type:       'link',
         filename:   `link_${Date.now()}`,
-        group_code: GROUP
+        group_code: groupCode
       })
     });
 
@@ -756,17 +828,138 @@ async function shareLink() {
       hidePanel('link-panel');
       document.getElementById('link-url').value     = '';
       document.getElementById('link-context').value = '';
-      drops.unshift(data.drop);
-      renderDrops();
-      updateStats();
-      saveCache();    // persist new drop immediately
-      toast('Link shared!', 'success');
+      if (groupCode === getActiveGroup()) {
+        drops.unshift(data.drop);
+        renderDrops();
+        updateStats();
+        saveCache();
+      }
+      const targetName = getGroups().find(g => g.code === groupCode)?.name
+        || (groupCode === 'default' ? 'Everyone' : groupCode);
+      toast(`Link shared to ${targetName}!`, 'success');
     } else {
       toast('Failed to share. Try again.', 'error');
     }
   } catch (e) {
     toast('Network error. Try again.', 'error');
   }
+}
+
+// ── Group management ──────────────────────────────────────────────────────────
+
+function switchGroup(code) {
+  setActiveGroup(code);
+  drops = loadCache();
+  renderGroupTabs();
+  populateGroupSelects();
+  renderDrops();
+  updateStats();
+  loadTheme();
+  loadDrops();
+}
+
+function leaveGroup(code) {
+  const grp = getGroups().find(g => g.code === code);
+  if (!confirm(`Leave "${grp ? grp.name : code}"?`)) return;
+  saveGroups(getGroups().filter(g => g.code !== code));
+  if (getActiveGroup() === code) setActiveGroup('default');
+  renderGroupTabs();
+  populateGroupSelects();
+  switchGroup(getActiveGroup());
+}
+
+function createGroup(name) {
+  const slug   = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'group';
+  const suffix = Math.random().toString(36).slice(2, 5);
+  const code   = `${slug}${suffix}`;
+  const groups = getGroups();
+  groups.push({ name: name.trim(), code });
+  saveGroups(groups);
+  return code;
+}
+
+function joinGroup(code, name) {
+  const cleanCode = code.trim().toLowerCase().replace(/\s+/g, '');
+  if (!cleanCode) return false;
+  const groups = getGroups();
+  if (groups.find(g => g.code === cleanCode)) return 'already';
+  const displayName = (name && name.trim())
+    ? name.trim()
+    : cleanCode.charAt(0).toUpperCase() + cleanCode.slice(1).replace(/-/g, ' ');
+  groups.push({ name: displayName, code: cleanCode });
+  saveGroups(groups);
+  return cleanCode;
+}
+
+function renderGroupTabs() {
+  const bar = document.getElementById('group-tabs-bar');
+  if (!bar) return;
+  const groups = getGroups();
+  const active = getActiveGroup();
+
+  bar.innerHTML = `
+    <button class="group-tab ${active === 'default' ? 'active' : ''}" data-code="default">Everyone</button>
+    ${groups.map(g => `
+      <button class="group-tab ${active === g.code ? 'active' : ''}" data-code="${g.code}">
+        ${g.name}<span class="group-tab-x" data-code="${g.code}" title="Leave group">×</span>
+      </button>`).join('')}
+    <button class="group-tab group-tab-add" id="btn-open-group-modal">+ Group</button>
+  `;
+
+  bar.querySelectorAll('.group-tab[data-code]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      if (e.target.classList.contains('group-tab-x')) return;
+      switchGroup(btn.dataset.code);
+    });
+  });
+
+  bar.querySelectorAll('.group-tab-x').forEach(x => {
+    x.addEventListener('click', e => {
+      e.stopPropagation();
+      leaveGroup(x.dataset.code);
+    });
+  });
+
+  document.getElementById('btn-open-group-modal')?.addEventListener('click', openGroupModal);
+}
+
+function populateGroupSelects() {
+  const groups  = getGroups();
+  const active  = getActiveGroup();
+  const options = `<option value="default">Everyone</option>`
+    + groups.map(g => `<option value="${g.code}">${g.name}</option>`).join('');
+  ['record-group-select', 'link-group-select', 'upload-group-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = options;
+    el.value = active;
+  });
+}
+
+// ── Group modal ───────────────────────────────────────────────────────────────
+
+function openGroupModal() {
+  const modal = document.getElementById('group-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  document.getElementById('create-result').style.display = 'none';
+  document.getElementById('group-name-input').value      = '';
+  document.getElementById('join-code-input').value       = '';
+  document.getElementById('join-name-input').value       = '';
+  switchModalTab('create');
+}
+
+function closeGroupModal() {
+  const modal = document.getElementById('group-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function switchModalTab(tab) {
+  document.querySelectorAll('.modal-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab)
+  );
+  document.getElementById('modal-pane-create').style.display = tab === 'create' ? '' : 'none';
+  document.getElementById('modal-pane-join').style.display   = tab === 'join'   ? '' : 'none';
 }
 
 // ── Panel helpers ─────────────────────────────────────────────────────────────
@@ -780,6 +973,11 @@ function hidePanel(id) {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+
+  // ── Step 0: Group tabs + selects ─────────────────────────────────────────
+  updateGroupBadge();
+  renderGroupTabs();
+  populateGroupSelects();
 
   // ── Step 1: Show cached drops INSTANTLY (before any network call) ──────────
   const cached = loadCache();
@@ -826,15 +1024,65 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('file-input').click()
   );
   document.getElementById('file-input').addEventListener('change', e => {
-    handleUpload(e.target.files[0]);
+    openUploadPanel(e.target.files[0]);
     e.target.value = '';
+  });
+  document.getElementById('btn-confirm-upload').addEventListener('click', confirmUpload);
+  document.getElementById('btn-cancel-upload').addEventListener('click', () => {
+    pendingUploadFile = null;
+    hidePanel('upload-panel');
   });
 
   // ── Share link ─────────────────────────────────────────────────────────────
-  document.getElementById('btn-link').addEventListener('click', () => showPanel('link-panel'));
+  document.getElementById('btn-link').addEventListener('click', () => {
+    populateGroupSelects();
+    showPanel('link-panel');
+  });
   document.getElementById('btn-cancel-link').addEventListener('click', () => hidePanel('link-panel'));
   document.getElementById('btn-share-link').addEventListener('click', shareLink);
   document.getElementById('link-url').addEventListener('keypress', e => {
     if (e.key === 'Enter') shareLink();
+  });
+
+  // ── Group modal ─────────────────────────────────────────────────────────
+  document.getElementById('btn-close-group-modal').addEventListener('click', closeGroupModal);
+  document.getElementById('group-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeGroupModal();
+  });
+  document.querySelectorAll('.modal-tab').forEach(t =>
+    t.addEventListener('click', () => switchModalTab(t.dataset.tab))
+  );
+  document.getElementById('btn-create-group-confirm').addEventListener('click', () => {
+    const name = document.getElementById('group-name-input').value.trim();
+    if (!name) { toast('Please enter a group name', 'error'); return; }
+    const code = createGroup(name);
+    document.getElementById('created-code').textContent = code;
+    document.getElementById('create-result').style.display = 'block';
+    renderGroupTabs();
+    populateGroupSelects();
+  });
+  document.getElementById('btn-copy-code').addEventListener('click', () => {
+    const code = document.getElementById('created-code').textContent;
+    navigator.clipboard?.writeText(code)
+      .then(() => toast('Code copied!', 'success'))
+      .catch(() => toast('Select and copy the code manually', ''));
+  });
+  document.getElementById('btn-join-group-confirm').addEventListener('click', () => {
+    const code   = document.getElementById('join-code-input').value.trim();
+    const name   = document.getElementById('join-name-input').value.trim();
+    const result = joinGroup(code, name);
+    if (result === false)     { toast('Please enter a valid group code', 'error'); return; }
+    if (result === 'already') { toast('You are already in this group', 'error');   return; }
+    closeGroupModal();
+    renderGroupTabs();
+    populateGroupSelects();
+    switchGroup(result);
+    toast('Joined group!', 'success');
+  });
+  document.getElementById('join-code-input').addEventListener('keypress', e => {
+    if (e.key === 'Enter') document.getElementById('btn-join-group-confirm').click();
+  });
+  document.getElementById('group-name-input').addEventListener('keypress', e => {
+    if (e.key === 'Enter') document.getElementById('btn-create-group-confirm').click();
   });
 });

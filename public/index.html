@@ -12,8 +12,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
   <script src="https://kit.fontawesome.com/77e427e5fc.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="style.css">
-  <!-- LameJS: client-side MP3 encoder for cross-device audio compatibility -->
-  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+  <!-- LameJS: client-side MP3 encoder for cross-device audio compatibility (bundled locally) -->
+  <script src="lame.min.js"></script>
   <script defer src="script.js"></script>
 </head>
 <body>
@@ -32,6 +32,9 @@
       <div class="header-title-wrapper">
         <h1 class="title">🎵 SoundDrop</h1>
         <p class="tagline">An ephemeral platform for collaborative audio exploration</p>
+      </div>
+      <div class="group-badge-wrapper">
+        <span id="group-badge" class="group-badge" style="display:none"></span>
       </div>
     </div>
 
@@ -90,6 +93,10 @@
         <!-- Post-recording: preview + actions -->
         <div class="audio-preview" id="preview-area" style="display: none;">
           <audio id="preview-audio" controls style="width: 100%;"></audio>
+          <div class="share-target-row">
+            <label class="share-target-label">Share to:</label>
+            <select id="record-group-select" class="share-target-select"></select>
+          </div>
           <div class="recording-actions">
             <button class="retake-btn" id="btn-rerecord">
               <i class="fa-solid fa-redo"></i> Re-record
@@ -116,6 +123,10 @@
           </div>
         </div>
         <textarea id="link-context" placeholder="How does this sound relate to today's theme?" rows="3" style="margin-bottom:15px;"></textarea>
+        <div class="share-target-row">
+          <label class="share-target-label">Share to:</label>
+          <select id="link-group-select" class="share-target-select"></select>
+        </div>
         <div class="recording-actions">
           <button class="retake-btn" id="btn-cancel-link">Cancel</button>
           <button class="share-drop-btn" id="btn-share-link">
@@ -124,6 +135,61 @@
         </div>
       </div>
     </div>
+
+    <!-- Upload Panel -->
+    <div class="recording-section" id="upload-panel" style="display:none">
+      <div class="recorder-card">
+        <h3><i class="fa-solid fa-upload"></i> Share Your Sound</h3>
+        <p id="upload-filename" class="upload-filename"></p>
+        <textarea id="upload-context" placeholder="Add a note about this sound (optional)..." rows="3" style="margin-bottom:15px;"></textarea>
+        <div class="share-target-row">
+          <label class="share-target-label">Share to:</label>
+          <select id="upload-group-select" class="share-target-select"></select>
+        </div>
+        <div class="recording-actions">
+          <button class="retake-btn" id="btn-cancel-upload">Cancel</button>
+          <button class="share-drop-btn" id="btn-confirm-upload">
+            <i class="fa-solid fa-share"></i> Share Sound
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Modal -->
+    <div id="group-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <button class="modal-close" id="btn-close-group-modal" aria-label="Close">✕</button>
+        <h3 class="modal-title">👥 Groups</h3>
+        <p class="modal-subtitle">Record together, share separately.</p>
+
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="create">Create Group</button>
+          <button class="modal-tab" data-tab="join">Join Group</button>
+        </div>
+
+        <div id="modal-pane-create" class="modal-pane">
+          <p class="modal-hint">Create a group and share the code with your participants.</p>
+          <input type="text" id="group-name-input" class="modal-input" placeholder="Group name (e.g. Students A)" maxlength="30">
+          <button class="modal-btn-primary" id="btn-create-group-confirm">Create Group</button>
+          <div id="create-result" class="create-result" style="display:none">
+            <p class="result-label">Share this code with your group:</p>
+            <div class="group-code-display" id="created-code"></div>
+            <button class="modal-btn-secondary" id="btn-copy-code">Copy Code</button>
+            <p class="result-hint">Anyone who enters this code can join your group.</p>
+          </div>
+        </div>
+
+        <div id="modal-pane-join" class="modal-pane" style="display:none">
+          <p class="modal-hint">Enter the group code shared by your host.</p>
+          <input type="text" id="join-code-input" class="modal-input" placeholder="Group code" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+          <input type="text" id="join-name-input" class="modal-input" placeholder="Give it a name (optional)" maxlength="30" style="margin-top:10px;">
+          <button class="modal-btn-primary" id="btn-join-group-confirm">Join Group</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group tabs bar (built dynamically) -->
+    <div class="group-tabs-bar" id="group-tabs-bar"></div>
 
     <div class="filter-tags">
       <button class="filter-tag active" data-filter="all">All Drops</button>

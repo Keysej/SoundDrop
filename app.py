@@ -1232,74 +1232,97 @@ def get_audio(drop_id):
 @app.route('/api/admin/sound-drops', methods=['GET'])
 def get_admin_sound_drops():
     """Admin endpoint to get sound drops with 7-day retention for research purposes"""
-    # Check admin access
     auth_header = request.headers.get('Authorization')
     if not auth_header or auth_header != 'Bearer research2024':
         return jsonify({'error': 'Admin access required'}), 403
-    
-    # Get group filter parameter
+
     group_filter = request.args.get('group', 'all')
-    
+
     try:
-        # Load data from file storage (active data)
-        file_data = []
-        if os.path.exists(STORAGE_FILE):
-            with open(STORAGE_FILE, 'r') as f:
-                file_data = json.load(f)
-        
-        # Also load recent data from MongoDB archive (last 7 days)
-        archived_data = []
-        try:
-            if mongo_db is not None:
-                now = datetime.datetime.now().timestamp() * 1000
-                seven_days_ms = 7 * 24 * 60 * 60 * 1000  # 7 days in milliseconds
-                cutoff_time = now - seven_days_ms
-                
-                # Query MongoDB for recent archived data
-                recent_archived = list(mongo_db.sound_drops.find({
+        now = datetime.datetime.now().timestamp() * 1000
+        seven_days_ms = 7 * 24 * 60 * 60 * 1000
+        cutoff_time = now - seven_days_ms
+
+        all_data = []
+
+        # Primary source: MongoDB active_sounds (same DB used by the main app)
+        if init_mongodb():
+            try:
+                active_docs = list(research_db.active_sounds.find({
                     'timestamp': {'$gte': cutoff_time}
                 }))
-                
-                # Convert MongoDB documents to the same format as file data
-                for doc in recent_archived:
-                    if '_id' in doc:
-                        del doc['_id']  # Remove MongoDB ID
-                    archived_data.append(doc)
-                
-                print(f"Admin API: Found {len(archived_data)} recent drops in MongoDB archive")
-        except Exception as mongo_error:
-            print(f"MongoDB query failed (continuing without archived data): {mongo_error}")
-        
-        # Combine file data and archived data
-        all_data = file_data + archived_data
-        
-        # Remove duplicates (in case something exists in both places)
+                for doc in active_docs:
+                    doc.pop('_id', None)
+                all_data.extend(active_docs)
+                print(f"Admin API: {len(active_docs)} drops from active_sounds")
+
+                # Also include archived drops from the research archive collection
+                archived_docs = list(research_db.sound_drops_archive.find({
+                    'timestamp': {'$gte': cutoff_time}
+                }))
+                for doc in archived_docs:
+                    doc.pop('_id', None)
+                all_data.extend(archived_docs)
+                print(f"Admin API: {len(archived_docs)} drops from sound_drops_archive")
+
+            except Exception as mongo_error:
+                print(f"Admin API MongoDB query failed: {mongo_error}")
+
+        # Fallback: file storage (Vercel /tmp — may be empty after cold start)
+        if os.path.exists(STORAGE_FILE):
+            try:
+                with open(STORAGE_FILE, 'r') as f:
+                    file_data = json.load(f)
+                all_data.extend(file_data)
+                print(f"Admin API: {len(file_data)} drops from file storage")
+            except Exception as file_error:
+                print(f"Admin API file read failed: {file_error}")
+
+        # Deduplicate by id
         seen_ids = set()
         unique_data = []
         for drop in all_data:
-            if drop['id'] not in seen_ids:
+            drop_id = drop.get('id')
+            if drop_id not in seen_ids:
                 unique_data.append(drop)
-                seen_ids.add(drop['id'])
-        
-        # Filter for 7-day window
-        now = datetime.datetime.now().timestamp() * 1000
-        seven_days_ms = 7 * 24 * 60 * 60 * 1000  # 7 days in milliseconds
+                seen_ids.add(drop_id)
+
+        # 7-day window filter
         admin_drops = [drop for drop in unique_data if (now - drop['timestamp']) < seven_days_ms]
-        
-        # Apply group filter if specified
+
+        # Group filter
         if group_filter != 'all':
             admin_drops = [drop for drop in admin_drops if drop.get('group_code', 'default') == group_filter]
-            print(f"Admin API: Filtered to group '{group_filter}': {len(admin_drops)} drops")
-        
-        # Sort by timestamp (newest first)
+            print(f"Admin API: filtered to group '{group_filter}': {len(admin_drops)} drops")
+
         admin_drops.sort(key=lambda x: x['timestamp'], reverse=True)
-        
-        print(f"Admin API: Found {len(admin_drops)} drops within 7-day window (file: {len(file_data)}, archived: {len(archived_data)})")
+
+        print(f"Admin API: returning {len(admin_drops)} drops")
         return jsonify(admin_drops)
-        
+
     except Exception as e:
         print(f"Error in admin sound drops API: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/groups', methods=['GET'])
+def get_admin_groups():
+    """Return all distinct group codes present in active_sounds (for admin dropdown)"""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != 'Bearer research2024':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    groups = set()
+    try:
+        if init_mongodb():
+            codes = research_db.active_sounds.distinct('group_code')
+            groups.update(c for c in codes if c)
+    except Exception as e:
+        print(f"Admin groups query failed: {e}")
+
+    # Always include 'default' and sort
+    groups.add('default')
+    return jsonify(sorted(groups))
+
 
 @app.route('/api/sound-drops', methods=['POST'])
 def create_sound_drop():
