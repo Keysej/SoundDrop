@@ -163,11 +163,18 @@
         <p class="modal-subtitle">Record together, share separately.</p>
 
         <div class="modal-tabs">
-          <button class="modal-tab active" data-tab="create">Create Group</button>
-          <button class="modal-tab" data-tab="join">Join Group</button>
+          <button class="modal-tab active" data-tab="join">Join Group</button>
+          <button class="modal-tab" data-tab="create">New Group</button>
         </div>
 
-        <div id="modal-pane-create" class="modal-pane">
+        <div id="modal-pane-join" class="modal-pane">
+          <p class="modal-hint">Got a code from your group creator? Paste it below to join and see shared sounds.</p>
+          <input type="text" id="join-code-input" class="modal-input" placeholder="Group code (e.g. studentsa4x)" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+          <input type="text" id="join-name-input" class="modal-input" placeholder="Give it a nickname (optional)" maxlength="30" style="margin-top:10px;">
+          <button class="modal-btn-primary" id="btn-join-group-confirm">Join Group</button>
+        </div>
+
+        <div id="modal-pane-create" class="modal-pane" style="display:none">
           <p class="modal-hint">Create a group and share the code with your participants.</p>
           <input type="text" id="group-name-input" class="modal-input" placeholder="Group name (e.g. Students A)" maxlength="30">
           <button class="modal-btn-primary" id="btn-create-group-confirm">Create Group</button>
@@ -177,13 +184,6 @@
             <button class="modal-btn-secondary" id="btn-copy-code">Copy Code</button>
             <p class="result-hint">Anyone who enters this code can join your group.</p>
           </div>
-        </div>
-
-        <div id="modal-pane-join" class="modal-pane" style="display:none">
-          <p class="modal-hint">Enter the group code shared by your host.</p>
-          <input type="text" id="join-code-input" class="modal-input" placeholder="Group code" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-          <input type="text" id="join-name-input" class="modal-input" placeholder="Give it a name (optional)" maxlength="30" style="margin-top:10px;">
-          <button class="modal-btn-primary" id="btn-join-group-confirm">Join Group</button>
         </div>
       </div>
     </div>

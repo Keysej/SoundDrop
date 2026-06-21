@@ -852,7 +852,13 @@ function switchGroup(code) {
   drops = loadCache();
   renderGroupTabs();
   populateGroupSelects();
-  renderDrops();
+  if (drops.length === 0) {
+    // Show a loading placeholder so the user knows a fetch is in progress
+    const list = document.getElementById('drops-list');
+    if (list) list.innerHTML = '<div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><p>Loading sounds…</p></div>';
+  } else {
+    renderDrops();
+  }
   updateStats();
   loadTheme();
   loadDrops();
@@ -938,7 +944,7 @@ function populateGroupSelects() {
 
 // ── Group modal ───────────────────────────────────────────────────────────────
 
-function openGroupModal() {
+function openGroupModal(defaultTab) {
   const modal = document.getElementById('group-modal');
   if (!modal) return;
   modal.style.display = 'flex';
@@ -946,7 +952,10 @@ function openGroupModal() {
   document.getElementById('group-name-input').value      = '';
   document.getElementById('join-code-input').value       = '';
   document.getElementById('join-name-input').value       = '';
-  switchModalTab('create');
+  switchModalTab(defaultTab || 'join');
+  // Auto-focus the relevant input so user can type immediately
+  const focusId = (defaultTab === 'create') ? 'group-name-input' : 'join-code-input';
+  setTimeout(() => document.getElementById(focusId)?.focus(), 150);
 }
 
 function closeGroupModal() {
@@ -958,8 +967,11 @@ function switchModalTab(tab) {
   document.querySelectorAll('.modal-tab').forEach(t =>
     t.classList.toggle('active', t.dataset.tab === tab)
   );
-  document.getElementById('modal-pane-create').style.display = tab === 'create' ? '' : 'none';
   document.getElementById('modal-pane-join').style.display   = tab === 'join'   ? '' : 'none';
+  document.getElementById('modal-pane-create').style.display = tab === 'create' ? '' : 'none';
+  // Focus the primary input of the active pane for faster typing on mobile
+  const focusId = tab === 'join' ? 'join-code-input' : 'group-name-input';
+  setTimeout(() => document.getElementById(focusId)?.focus(), 50);
 }
 
 // ── Panel helpers ─────────────────────────────────────────────────────────────
