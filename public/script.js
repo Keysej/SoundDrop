@@ -904,7 +904,6 @@ function renderGroupTabs() {
   const active = getActiveGroup();
 
   bar.innerHTML = `
-    <button class="group-tab ${active === 'default' ? 'active' : ''}" data-code="default">Everyone</button>
     ${groups.map(g => `
       <button class="group-tab ${active === g.code ? 'active' : ''}" data-code="${g.code}">
         ${g.name}<span class="group-tab-x" data-code="${g.code}" title="Leave group">×</span>
@@ -932,8 +931,8 @@ function renderGroupTabs() {
 function populateGroupSelects() {
   const groups  = getGroups();
   const active  = getActiveGroup();
-  const options = `<option value="default">Everyone</option>`
-    + groups.map(g => `<option value="${g.code}">${g.name}</option>`).join('');
+  const everyoneOpt = groups.length === 0 ? `<option value="default">General</option>` : '';
+  const options = everyoneOpt + groups.map(g => `<option value="${g.code}">${g.name}</option>`).join('');
   ['record-group-select', 'link-group-select', 'upload-group-select'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;

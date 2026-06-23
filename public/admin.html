@@ -522,33 +522,50 @@
 
     function createDropHTML(drop, type) {
       const timestamp = new Date(drop.timestamp).toLocaleString();
+      const groupCode = drop.group_code || 'default';
+      const groupLabel = groupCode === 'default' ? 'General' : groupCode;
+
       const commentsHtml = drop.discussions && drop.discussions.length > 0 ? `
         <div class="comments-section">
           <strong>💬 Comments (${drop.discussions.length}):</strong>
           ${drop.discussions.map(comment => `
             <div class="comment">
               <strong>${comment.author || 'User'}:</strong> ${comment.text}
-              <br><small>${new Date(comment.timestamp).toLocaleString()}</small>
+              <br><small>${comment.timestamp ? new Date(comment.timestamp).toLocaleString() : ''}</small>
             </div>
           `).join('')}
         </div>
       ` : '';
+
+      let mediaHTML = '';
+      if (drop.type === 'link') {
+        const href = drop.audioData || '#';
+        mediaHTML = `<div style="margin:8px 0;"><a href="${href}" target="_blank" rel="noopener" style="color:#667eea; font-weight:600;">🔗 Open Audio Link</a></div>`;
+      } else {
+        const audioUrl = `/api/sound-drops/${drop.id}/audio`;
+        const dlName = (drop.filename || 'recording').replace(/\.[^.]+$/, '') + '.mp3';
+        mediaHTML = `
+          <audio controls preload="none" style="width:100%; margin:8px 0;">
+            <source src="${audioUrl}">
+          </audio>
+          <a class="download-btn" href="${audioUrl}" download="${dlName}" style="display:inline-block; margin-top:4px; text-decoration:none;">📥 Download</a>
+        `;
+      }
 
       return `
         <div class="drop-item">
           <div class="drop-header">
             <h3 class="drop-title">${drop.theme || 'No Theme'}</h3>
             <div class="drop-controls">
-              ${drop.audioData ? `<button class="play-btn" onclick="playAudio('${drop.audioData}', this)">▶️ Play</button>` : ''}
-              ${drop.audioData ? `<button class="download-btn" onclick="downloadAudio('${drop.audioData}', '${drop.filename || 'recording'}')">📥 Download</button>` : ''}
               <button class="delete-btn" onclick="deleteSoundDrop(${drop.id}, this)" title="Delete this sound drop">🗑️ Delete</button>
             </div>
           </div>
           <div class="drop-meta">
-            📅 ${timestamp} | 🎵 ${drop.type || 'Unknown'} | 📄 ${drop.filename || 'No filename'}
+            📅 ${timestamp} | 🎵 ${drop.type || 'Unknown'} | 📄 ${drop.filename || 'No filename'} | 👥 Group: <strong>${groupLabel}</strong>
             ${type === 'archived' ? ' | 📦 Archived' : ''}
           </div>
           ${drop.context ? `<div class="drop-meta">💭 ${drop.context}</div>` : ''}
+          ${mediaHTML}
           ${commentsHtml}
         </div>
       `;
