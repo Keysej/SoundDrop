@@ -223,8 +223,11 @@ function fixAudioDuration(audioEl) {
     }
   }, { once: true });
 
-  // Format-incompatibility fallback — fires when the browser can't decode the audio
+  // Format-incompatibility fallback — fires when the browser can't decode the audio.
+  // Only replace the UI for MEDIA_ERR_SRC_NOT_SUPPORTED (code 4); transient network
+  // or decode errors (codes 2/3) should not permanently hide the player.
   audioEl.addEventListener('error', () => {
+    if (audioEl.error && audioEl.error.code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return;
     const downloadSrc = audioEl.dataset.download || audioEl.querySelector('source')?.src || '';
     const mime = audioEl.querySelector('source')?.type || 'audio';
     const ext   = mime.includes('webm') ? 'webm'
@@ -279,10 +282,13 @@ async function loadDrops() {
     drops = mergeWithCache(serverDrops);
     saveCache();         // persist the fresh server data to cache
 
-    // Don't rebuild the card list while audio is playing — it destroys the
-    // audio element and cuts off playback. Stats still update.
+    // Don't rebuild the card list while audio is playing or a comment is being typed —
+    // either would destroy the active element and lose the user's work.
     const anyPlaying = Array.from(document.querySelectorAll('.drop-audio')).some(a => !a.paused);
-    if (!anyPlaying) renderDrops();
+    const anyTyping  = Array.from(document.querySelectorAll('.comment-input')).some(
+      i => i === document.activeElement || i.value.trim() !== ''
+    );
+    if (!anyPlaying && !anyTyping) renderDrops();
     updateStats();
   } catch (e) {
     console.error('loadDrops failed:', e);
@@ -460,8 +466,13 @@ async function handleApplaud(dropId, btn, card) {
   countEl.textContent = adding
     ? parseInt(countEl.textContent || 0) + 1
     : Math.max(0, parseInt(countEl.textContent || 0) - 1);
-  btn.classList.toggle('applauded', adding);
-  localStorage.setItem(`applauded_${dropId}`, adding);
+  if (adding) {
+    btn.classList.add('applauded');
+    localStorage.setItem(`applauded_${dropId}`, 'true');
+  } else {
+    btn.classList.remove('applauded');
+    localStorage.removeItem(`applauded_${dropId}`);
+  }
 
   try {
     const res = await apiFetch(`/api/sound-drops/${dropId}/applaud`, {
