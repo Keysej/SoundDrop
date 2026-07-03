@@ -999,32 +999,36 @@ def get_current_theme(group_code='default'):
     # Base themes that all groups can use
     base_themes = [
         {
-            "title": "Urban Soundscapes",
-            "description": "Capture the sounds that define our urban environment. Street noise, construction, conversations, traffic, music bleeding from windows - what audio defines city life for you?"
-        },
-        {
-            "title": "Emotional Sounds",
-            "description": "What sounds trigger specific emotions? Record or share audio that makes you feel joy, sadness, comfort, anxiety, or nostalgia."
+            "title": "Sounds of Technology",
+            "description": "The audio of our digital lives. Notifications, device hum, keyboard clicks, startup sounds, ringtones — what does technology sound like in your world?"
         },
         {
             "title": "Memory Triggers",
-            "description": "Sounds that transport you to another time or place. Childhood memories, significant moments, or familiar environments."
+            "description": "Sounds that transport you to another time or place. Childhood memories, significant moments, or familiar environments that live in your ears."
         },
         {
-            "title": "Workplace Audio",
-            "description": "The soundtrack of productivity. Keyboard clicks, coffee machines, meeting room chatter, or the sounds that help you focus."
+            "title": "Sounds of Your Surroundings",
+            "description": "The audio backdrop of where you are. Street noise, room ambience, weather outside, the hum of your building — what does your immediate environment sound like right now?"
         },
         {
-            "title": "Nature & Silence",
-            "description": "Natural soundscapes and the spaces between sounds. Birds, water, wind, or the quality of different silences."
+            "title": "Culture, Music & Tradition",
+            "description": "Sounds that represent culture, music, tradition, or community. Songs, instruments, celebrations, rituals, or the audio of places that feel like home."
         },
         {
-            "title": "Cultural Audio Markers",
-            "description": "Sounds that represent culture, tradition, or community. Music, languages, celebrations, or rituals."
+            "title": "Sounds That Make You Laugh or Smile",
+            "description": "Something that made you genuinely laugh, giggle, or grin. A funny moment, a silly sound, a song that lifts your mood — anything that brings a smile."
         },
         {
-            "title": "Technological Sounds",
-            "description": "The audio of our digital age. Notifications, startup sounds, dial tones, or the hum of devices."
+            "title": "Sounds of Work",
+            "description": "The soundtrack of getting things done. Your workspace, tools, colleagues, commute, or the sounds that signal you're in work mode."
+        },
+        {
+            "title": "Sounds of Play",
+            "description": "Recreation, games, fun, and leisure. Sports, hobbies, games, or anything that sounds like someone genuinely enjoying themselves."
+        },
+        {
+            "title": "Sounds You Love / Sounds You Hate",
+            "description": "Your personal sonic relationship. A sound you could listen to forever — or one that drives you absolutely crazy. Both count."
         }
     ]
     
