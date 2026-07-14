@@ -5,7 +5,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin - SoundDrop</title>
-  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
   <link rel="stylesheet" href="style.css">
   <style>
     .admin-container {
@@ -228,6 +227,49 @@
       padding: 40px;
       color: #7f8c8d;
     }
+
+    .day-section {
+      margin-bottom: 30px;
+    }
+
+    .day-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #667eea;
+      color: white;
+      padding: 12px 18px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+
+    .day-title {
+      font-weight: 700;
+      font-size: 1em;
+    }
+
+    .day-count {
+      font-weight: 400;
+      opacity: 0.85;
+      margin-left: 8px;
+      font-size: 0.9em;
+    }
+
+    .download-day-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .download-day-btn:hover { background: #218838; }
+    .download-day-btn:disabled { background: #6c757d; cursor: default; }
   </style>
 </head>
 <body>
@@ -312,7 +354,6 @@
 
   <script>
     let adminAuthenticated = false;
-    let currentAudio = null;
     let adminPassword = 'research2024';
 
     function loginAdmin() {
@@ -453,52 +494,54 @@
       document.getElementById('total-comments').textContent = totalComments;
     }
 
+    function groupDropsByDay(drops) {
+      const groups = new Map();
+      [...drops].sort((a, b) => b.timestamp - a.timestamp).forEach(drop => {
+        const key = new Date(drop.timestamp).toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(drop);
+      });
+      return groups;
+    }
+
     function displayData(activeData, archivedData) {
       const dataDisplay = document.getElementById('data-display');
       let html = '';
 
-      // Data source indicator with better detection
-      let dataSourceDisplay = '';
-      let dataSourceColor = '#e8f4fd';
-      
-      if (activeData.length > 0) {
-        // Check if we have MongoDB data (more reliable IDs) vs localStorage data
-        const hasMongoData = activeData.some(drop => drop._id || (drop.id && drop.id.toString().length > 10));
-        
-        if (hasMongoData) {
-          dataSourceDisplay = '🌐 MongoDB Database (Authoritative)';
-          dataSourceColor = '#d4edda'; // Green
-        } else {
-          dataSourceDisplay = '💾 Local Storage (Browser Only)';
-          dataSourceColor = '#fff3cd'; // Yellow warning
-        }
-      } else {
-        dataSourceDisplay = '❌ No Data Available';
-        dataSourceColor = '#f8d7da'; // Red
-      }
-      
+      const hasMongoData = activeData.some(drop => drop._id || (drop.id && drop.id.toString().length > 10));
+      const dataSourceDisplay = activeData.length === 0 ? '❌ No Data Available'
+        : hasMongoData ? '🌐 MongoDB Database (Authoritative)'
+        : '💾 Local Storage (Browser Only)';
+      const dataSourceColor = activeData.length === 0 ? '#f8d7da' : hasMongoData ? '#d4edda' : '#fff3cd';
+
       html += `
-        <div style="background: ${dataSourceColor}; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9em; border-left: 4px solid #007bff;">
+        <div style="background:${dataSourceColor}; padding:15px; border-radius:8px; margin-bottom:20px; font-size:0.9em; border-left:4px solid #007bff;">
           📊 <strong>Data Source:</strong> ${dataSourceDisplay}
           <br><small>🗓️ Showing data from the last 7 days (research view)</small>
-          ${dataSourceDisplay.includes('Local Storage') ? 
-            '<br><small>⚠️ <strong>Warning:</strong> This data is only in your browser. Delete operations may fail if not synced to server.</small>' : ''}
-          ${dataSourceDisplay.includes('MongoDB') ? 
-            '<br><small>✅ <strong>Reliable:</strong> Data is stored in the database. Delete operations will work properly.</small>' : ''}
         </div>
       `;
 
-      // Active Data Section
       if (activeData.length > 0) {
-        html += `
-          <div class="data-section">
-            <h2 class="section-title">📊 Research Data - Last 7 Days (${activeData.length})</h2>
-            ${activeData.map(drop => createDropHTML(drop, 'active')).join('')}
-          </div>
-        `;
+        const byDay = groupDropsByDay(activeData);
+        html += `<div class="data-section"><h2 class="section-title">📊 Research Data — Last 7 Days (${activeData.length} total)</h2>`;
+        byDay.forEach((dayDrops, dateLabel) => {
+          const audioDrops = dayDrops.filter(d => d.type !== 'link');
+          const ids = audioDrops.map(d => d.id).join(',');
+          html += `
+            <div class="day-section">
+              <div class="day-header">
+                <span class="day-title">${dateLabel} <span class="day-count">${dayDrops.length} drop${dayDrops.length !== 1 ? 's' : ''}</span></span>
+                ${audioDrops.length > 0 ? `<button class="download-day-btn" data-ids="${ids}" data-date="${dateLabel}">📥 Download All Audio (${audioDrops.length})</button>` : ''}
+              </div>
+              ${dayDrops.map(drop => createDropHTML(drop, 'active')).join('')}
+            </div>
+          `;
+        });
+        html += `</div>`;
       }
 
-      // Archived Data Section (placeholder for now)
       if (archivedData.length > 0) {
         html += `
           <div class="data-section">
@@ -569,30 +612,6 @@
           ${commentsHtml}
         </div>
       `;
-    }
-
-    function playAudio(audioData, button) {
-      // Stop current audio if playing
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-        // Reset all buttons
-        document.querySelectorAll('.play-btn').forEach(btn => {
-          btn.textContent = '▶️ Play';
-        });
-      }
-      
-      // Play new audio
-      if (button.textContent === '▶️ Play') {
-        currentAudio = new Audio(audioData);
-        currentAudio.play();
-        button.textContent = '⏸️ Pause';
-        
-        currentAudio.onended = () => {
-          button.textContent = '▶️ Play';
-          currentAudio = null;
-        };
-      }
     }
 
     async function exportData(format) {
@@ -730,177 +749,10 @@
 
     function refreshData() {
       document.getElementById('data-display').innerHTML = '<div class="loading">Refreshing data...</div>';
-      loadDashboardData();
+      const selectedGroup = document.getElementById('group-filter')?.value || 'all';
+      loadDashboardData(selectedGroup);
     }
 
-
-    // MP3 conversion using LAME encoder (same as main page)
-    async function convertAudioToMp3(audioBlob) {
-      return new Promise(async (resolve) => {
-        try {
-          // Check if LAME library is available
-          if (typeof lamejs === 'undefined') {
-            console.log('LAME library not available, skipping MP3 conversion');
-            resolve(null);
-            return;
-          }
-          
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const fileReader = new FileReader();
-          
-          fileReader.onload = async function() {
-            try {
-              const arrayBuffer = fileReader.result;
-              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-              
-              // Convert to mono for simplicity (MP3 encoding is complex for stereo)
-              const channels = audioBuffer.numberOfChannels;
-              const sampleRate = audioBuffer.sampleRate;
-              const length = audioBuffer.length;
-              
-              // Get audio data (convert to mono if stereo)
-              let samples;
-              if (channels === 1) {
-                samples = audioBuffer.getChannelData(0);
-              } else {
-                // Mix stereo to mono
-                const left = audioBuffer.getChannelData(0);
-                const right = audioBuffer.getChannelData(1);
-                samples = new Float32Array(length);
-                for (let i = 0; i < length; i++) {
-                  samples[i] = (left[i] + right[i]) / 2;
-                }
-              }
-              
-              // Convert float samples to 16-bit PCM
-              const pcmSamples = new Int16Array(length);
-              for (let i = 0; i < length; i++) {
-                const sample = Math.max(-1, Math.min(1, samples[i]));
-                pcmSamples[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-              }
-              
-              // Initialize LAME encoder
-              const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128); // Mono, sampleRate, 128kbps
-              const mp3Data = [];
-              
-              // Encode in chunks
-              const chunkSize = 1152; // LAME chunk size
-              for (let i = 0; i < pcmSamples.length; i += chunkSize) {
-                const chunk = pcmSamples.subarray(i, i + chunkSize);
-                const mp3buf = mp3encoder.encodeBuffer(chunk);
-                if (mp3buf.length > 0) {
-                  mp3Data.push(mp3buf);
-                }
-              }
-              
-              // Finalize encoding
-              const mp3buf = mp3encoder.flush();
-              if (mp3buf.length > 0) {
-                mp3Data.push(mp3buf);
-              }
-              
-              // Create MP3 blob
-              const mp3Blob = new Blob(mp3Data, { type: 'audio/mp3' });
-              console.log('Successfully encoded MP3:', mp3Blob.size, 'bytes');
-              resolve(mp3Blob);
-              
-            } catch (error) {
-              console.log('MP3 encoding failed:', error);
-              resolve(null);
-            }
-          };
-          
-          fileReader.onerror = () => {
-            console.log('FileReader error during MP3 conversion');
-            resolve(null);
-          };
-          
-          fileReader.readAsArrayBuffer(audioBlob);
-          
-        } catch (error) {
-          console.log('MP3 conversion setup failed:', error);
-          resolve(null);
-        }
-      });
-    }
-
-    // Convert AudioBuffer to WAV Blob (fallback)
-    function audioBufferToWav(buffer) {
-      const length = buffer.length;
-      const numberOfChannels = buffer.numberOfChannels;
-      const sampleRate = buffer.sampleRate;
-      const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-      const view = new DataView(arrayBuffer);
-      
-      // WAV header
-      const writeString = (offset, string) => {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i));
-        }
-      };
-      
-      writeString(0, 'RIFF');
-      view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-      writeString(8, 'WAVE');
-      writeString(12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, numberOfChannels, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-      view.setUint16(32, numberOfChannels * 2, true);
-      view.setUint16(34, 16, true);
-      writeString(36, 'data');
-      view.setUint32(40, length * numberOfChannels * 2, true);
-      
-      // Convert audio data
-      let offset = 44;
-      for (let i = 0; i < length; i++) {
-        for (let channel = 0; channel < numberOfChannels; channel++) {
-          const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
-          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-          offset += 2;
-        }
-      }
-      
-      return new Blob([arrayBuffer], { type: 'audio/wav' });
-    }
-
-    // Convert audio to WAV format (fallback)
-    async function convertAudioToWav(audioBlob) {
-      return new Promise((resolve) => {
-        try {
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const fileReader = new FileReader();
-          
-          fileReader.onload = async function() {
-            try {
-              const arrayBuffer = fileReader.result;
-              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-              
-              // Convert to WAV
-              const wavBlob = audioBufferToWav(audioBuffer);
-              resolve(wavBlob);
-            } catch (error) {
-              console.log('Audio conversion failed, using original:', error);
-              resolve(audioBlob); // Fallback to original
-            }
-          };
-          
-          fileReader.onerror = () => {
-            console.log('FileReader error, using original audio');
-            resolve(audioBlob); // Fallback to original
-          };
-          
-          fileReader.readAsArrayBuffer(audioBlob);
-        } catch (error) {
-          console.log('Conversion not supported, using original:', error);
-          resolve(audioBlob); // Fallback to original
-        }
-      });
-    }
-
-    // Enhanced download function with MP3 conversion (same as main page)
     async function deleteSoundDrop(dropId, button) {
       // Confirm deletion
       const confirmDelete = confirm(
@@ -1027,84 +879,7 @@
       }
     }
 
-    async function downloadAudio(audioData, filename) {
-      if (!audioData) {
-        alert('No audio data available for download');
-        return;
-      }
-      
-      try {
-        const mimeMatch = audioData.match(/data:([^;]+);base64,/);
-        let fileExtension = '.mp3'; // Default to MP3 for best compatibility
-        let downloadUrl = audioData;
-        
-        if (mimeMatch) {
-          const mimeType = mimeMatch[1];
-          console.log('Original audio MIME type:', mimeType);
-          
-          // Always try to convert to MP3 for maximum desktop compatibility
-          if (typeof AudioContext !== 'undefined') {
-            try {
-              console.log('Converting audio to MP3 for maximum desktop compatibility...');
-              
-              // Convert data URL back to blob
-              const response = await fetch(audioData);
-              const originalBlob = await response.blob();
-              
-              // Convert to MP3 using LAME encoder
-              const mp3Blob = await convertAudioToMp3(originalBlob);
-              if (mp3Blob) {
-                downloadUrl = URL.createObjectURL(mp3Blob);
-                fileExtension = '.mp3';
-                console.log('Successfully converted to MP3 format');
-              } else {
-                // Fallback to WAV
-                const wavBlob = await convertAudioToWav(originalBlob);
-                downloadUrl = URL.createObjectURL(wavBlob);
-                fileExtension = '.wav';
-                console.log('Converted to WAV format as fallback');
-              }
-            } catch (conversionError) {
-              console.log('Conversion failed, using original format:', conversionError);
-              // Determine original file extension
-              if (mimeType.includes('mp4')) fileExtension = '.mp4';
-              else if (mimeType.includes('webm')) fileExtension = '.webm';
-              else if (mimeType.includes('wav')) fileExtension = '.wav';
-              else if (mimeType.includes('ogg')) fileExtension = '.ogg';
-            }
-          }
-        }
-        
-        // Create download link
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = `${filename || 'recording'}${fileExtension}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // Clean up object URL if we created one
-        if (downloadUrl !== audioData) {
-          setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-        }
-        
-        console.log(`Downloaded audio as: ${filename}${fileExtension}`);
-      } catch (error) {
-        console.error('Download error:', error);
-        alert('Failed to download audio file');
-      }
-    }
-
-    // Handle Enter key in password field
     document.addEventListener('DOMContentLoaded', function() {
-      // Refresh data function
-      function refreshData() {
-        if (adminAuthenticated) {
-          document.getElementById('data-display').innerHTML = '<div class="loading">🔄 Refreshing data...</div>';
-          loadDashboardData();
-        }
-      }
-
       document.getElementById('admin-password').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
           loginAdmin();
@@ -1120,6 +895,28 @@
       document.getElementById('refresh-data-btn').addEventListener('click', function() {
         const selectedGroup = document.getElementById('group-filter').value;
         loadDashboardData(selectedGroup);
+      });
+
+      document.getElementById('data-display').addEventListener('click', async function(e) {
+        const btn = e.target.closest('.download-day-btn');
+        if (!btn) return;
+        const ids = btn.dataset.ids.split(',').filter(Boolean);
+        const dateLabel = btn.dataset.date;
+        if (!confirm(`Download ${ids.length} audio file(s) from ${dateLabel}?\n\nFiles will download one at a time.`)) return;
+        btn.disabled = true;
+        btn.textContent = `⏳ Downloading 0 / ${ids.length}…`;
+        for (let i = 0; i < ids.length; i++) {
+          const a = document.createElement('a');
+          a.href = `/api/sound-drops/${ids[i]}/audio`;
+          a.download = `sounddrop_${ids[i]}.mp3`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          btn.textContent = `⏳ Downloading ${i + 1} / ${ids.length}…`;
+          if (i < ids.length - 1) await new Promise(r => setTimeout(r, 700));
+        }
+        btn.disabled = false;
+        btn.textContent = `✅ Downloaded (${ids.length})`;
       });
     });
   </script>
