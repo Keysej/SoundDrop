@@ -86,9 +86,13 @@ def archive_to_research_db(drop_data):
                 'study_phase': 'diary_study_2024'
             }
             
-            # Insert into research archive
-            result = research_db.sound_drops_archive.insert_one(research_record)
-            print(f"Archived drop {drop_data['id']} to research database: {result.inserted_id}")
+            # Upsert into research archive (prevent duplicates on repeated calls)
+            research_db.sound_drops_archive.replace_one(
+                {'id': drop_data['id']},
+                research_record,
+                upsert=True
+            )
+            print(f"Archived drop {drop_data['id']} to research database")
             return True
         else:
             print("MongoDB not available - skipping archive (this is OK for basic functionality)")
@@ -140,6 +144,21 @@ def load_sound_drops():
                 # Return sounds from the last 30 hours to account for timezone differences
                 thirty_hours_ms = 30 * 60 * 60 * 1000  # 30 hours in milliseconds
                 valid_drops = [drop for drop in data if (now - drop['timestamp']) < thirty_hours_ms]
+
+                # Proactively preserve applauded sounds that aged out of the 30h display window.
+                # This ensures they are safe in sound_drops_archive before 7-day cleanup runs.
+                to_preserve = [
+                    drop for drop in data
+                    if (now - drop['timestamp']) >= thirty_hours_ms
+                    and drop.get('applauds', 0) >= 1
+                    and not drop.get('preserved')
+                ]
+                if to_preserve:
+                    print(f"Auto-preserving {len(to_preserve)} applauded sounds")
+                    for drop in to_preserve:
+                        archive_to_research_db({**drop, 'preserved': True})
+                        collection.update_one({'id': drop['id']}, {'$set': {'preserved': True}})
+
                 print(f"MongoDB: Returning {len(valid_drops)} drops from last 30 hours")
                 return valid_drops
                 
@@ -1193,6 +1212,12 @@ def get_audio(drop_id):
             if doc:
                 doc.pop('_id', None)
                 drop = doc
+            # Also check archive collection (covers preserved/expired sounds)
+            if drop is None or not drop.get('audioData'):
+                doc = research_db.sound_drops_archive.find_one({'id': drop_id})
+                if doc and doc.get('audioData'):
+                    doc.pop('_id', None)
+                    drop = doc
         # Fallback to file storage
         if drop is None:
             all_drops = load_sound_drops()
@@ -1307,6 +1332,42 @@ def get_admin_sound_drops():
     except Exception as e:
         print(f"Error in admin sound drops API: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/export-applauded', methods=['GET'])
+def get_applauded_sounds():
+    """Return metadata for all sounds with applauds >= 1 (no audio bytes — client fetches via /audio)."""
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or auth_header != 'Bearer research2024':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    try:
+        applauded = []
+        seen_ids = set()
+
+        if init_mongodb():
+            for doc in research_db.active_sounds.find({'applauds': {'$gte': 1}}):
+                doc.pop('_id', None)
+                doc.pop('audioData', None)
+                drop_id = doc.get('id')
+                if drop_id not in seen_ids:
+                    applauded.append(doc)
+                    seen_ids.add(drop_id)
+
+            for doc in research_db.sound_drops_archive.find({'applauds': {'$gte': 1}}):
+                doc.pop('_id', None)
+                doc.pop('audioData', None)
+                drop_id = doc.get('id')
+                if drop_id not in seen_ids:
+                    applauded.append(doc)
+                    seen_ids.add(drop_id)
+
+        applauded.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        return jsonify(applauded)
+
+    except Exception as e:
+        print(f"Error fetching applauded sounds: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/admin/groups', methods=['GET'])
 def get_admin_groups():

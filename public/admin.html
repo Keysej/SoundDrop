@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin - SoundDrop</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     .admin-container {
       max-width: 1200px;
@@ -270,6 +271,20 @@
 
     .download-day-btn:hover { background: #218838; }
     .download-day-btn:disabled { background: #6c757d; cursor: default; }
+
+    .export-btn-applauded {
+      background: #6f42c1;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 0 10px;
+      transition: all 0.3s ease;
+    }
+    .export-btn-applauded:hover { background: #5a32a3; transform: translateY(-2px); }
+    .export-btn-applauded:disabled { background: #6c757d; cursor: default; transform: none; }
   </style>
 </head>
 <body>
@@ -332,6 +347,7 @@
         <button class="export-btn" onclick="exportData('json')">📄 Export JSON</button>
         <button class="export-btn" onclick="exportData('csv')">📊 Export CSV</button>
         <button class="export-btn" onclick="refreshData()">🔄 Refresh Data</button>
+        <button class="export-btn-applauded" id="btn-applauded-zip" onclick="downloadApplaudedZip()">👏 Download Applauded Sounds (ZIP)</button>
       </div>
 
       <!-- Admin Actions -->
@@ -751,6 +767,78 @@
       document.getElementById('data-display').innerHTML = '<div class="loading">Refreshing data...</div>';
       const selectedGroup = document.getElementById('group-filter')?.value || 'all';
       loadDashboardData(selectedGroup);
+    }
+
+    async function downloadApplaudedZip() {
+      if (!adminAuthenticated) { alert('Please log in first'); return; }
+
+      const btn = document.getElementById('btn-applauded-zip');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+
+      try {
+        btn.textContent = '⏳ Fetching list...';
+        const resp = await fetch('/api/admin/export-applauded', {
+          headers: { 'Authorization': 'Bearer research2024' }
+        });
+        if (!resp.ok) throw new Error('Server returned ' + resp.status);
+        const drops = await resp.json();
+
+        const audioDrops = drops.filter(d => d.type !== 'link');
+        if (audioDrops.length === 0) {
+          alert('No applauded audio recordings found yet.');
+          return;
+        }
+
+        const zip = new JSZip();
+        const escape = v => `"${String(v || '').replace(/"/g, '""')}"`;
+        const csvRows = [['id','date','theme','group','applauds','context','filename'].map(escape).join(',')];
+
+        for (let i = 0; i < audioDrops.length; i++) {
+          const drop = audioDrops[i];
+          btn.textContent = `⏳ ${i + 1} / ${audioDrops.length} — ${drop.theme || ''}`;
+
+          const date = new Date(drop.timestamp).toISOString();
+          csvRows.push([
+            escape(drop.id), escape(date), escape(drop.theme),
+            escape(drop.group_code || 'default'), escape(drop.applauds),
+            escape(drop.context), escape(drop.filename)
+          ].join(','));
+
+          try {
+            const audioResp = await fetch(`/api/sound-drops/${drop.id}/audio`);
+            if (audioResp.ok) {
+              const blob = await audioResp.blob();
+              const originalName = drop.filename || `recording_${drop.id}`;
+              const ext = originalName.match(/\.[^.]+$/)?.[0] || '.mp3';
+              const dateStr = new Date(drop.timestamp).toISOString().slice(0, 10);
+              const group = drop.group_code || 'default';
+              zip.file(`${group}_${dateStr}_${drop.id}${ext}`, blob);
+            }
+          } catch (e) {
+            console.warn(`Could not fetch audio for drop ${drop.id}:`, e);
+          }
+        }
+
+        zip.file('metadata.csv', csvRows.join('\n'));
+
+        btn.textContent = '⏳ Compressing...';
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sounddrop_applauded_${dateStr}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+      } catch (err) {
+        console.error('Applauded ZIP download failed:', err);
+        alert('Download failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
 
     async function deleteSoundDrop(dropId, button) {
