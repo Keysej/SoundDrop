@@ -619,7 +619,7 @@
             </div>
           </div>
           <div class="drop-meta">
-            📅 ${timestamp} | 🎵 ${drop.type || 'Unknown'} | 📄 ${drop.filename || 'No filename'} | 👥 Group: <strong>${groupLabel}</strong>
+            📅 ${timestamp} | 🎵 ${drop.type || 'Unknown'} | 📄 ${drop.filename || 'No filename'} | 👥 Group: <strong>${groupLabel}</strong> | 👏 <strong>${drop.applauds || 0}</strong> applaud${(drop.applauds || 0) !== 1 ? 's' : ''}
             ${type === 'archived' ? ' | 📦 Archived' : ''}
           </div>
           ${drop.context ? `<div class="drop-meta">💭 ${drop.context}</div>` : ''}
