@@ -288,7 +288,24 @@ async function loadDrops() {
     const anyTyping  = Array.from(document.querySelectorAll('.comment-input')).some(
       i => i === document.activeElement || i.value.trim() !== ''
     );
-    if (!anyPlaying && !anyTyping) renderDrops();
+    if (!anyPlaying && !anyTyping) {
+      renderDrops();
+    } else {
+      // Full re-render is blocked — update counts in-place so other participants'
+      // applauds and comments still appear without disturbing playback or typing.
+      const list = document.getElementById('drops-list');
+      drops.forEach(drop => {
+        const card = list.querySelector(`[data-id="${drop.id}"]`);
+        if (!card) return;
+        const countEl = card.querySelector('.applaud-count');
+        if (countEl && typeof drop.applauds === 'number') countEl.textContent = drop.applauds;
+        const commentEl = card.querySelector('.comment-count');
+        if (commentEl) {
+          const n = (drop.discussions || []).length;
+          commentEl.textContent = `${n} comment${n !== 1 ? 's' : ''}`;
+        }
+      });
+    }
     updateStats();
   } catch (e) {
     console.error('loadDrops failed:', e);
