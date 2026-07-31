@@ -223,36 +223,61 @@ function fixAudioDuration(audioEl) {
     }
   }, { once: true });
 
-  // Format-incompatibility fallback — fires when the browser can't decode the audio.
-  // Only replace the UI for MEDIA_ERR_SRC_NOT_SUPPORTED (code 4); transient network
-  // or decode errors (codes 2/3) should not permanently hide the player.
   audioEl.addEventListener('error', () => {
-    if (audioEl.error && audioEl.error.code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return;
-    const downloadSrc = audioEl.dataset.download || audioEl.querySelector('source')?.src || '';
-    const mime = audioEl.querySelector('source')?.type || 'audio';
-    const ext   = mime.includes('webm') ? 'webm'
-                : mime.includes('mp4')  ? 'm4a'
-                : mime.includes('ogg')  ? 'ogg'
-                : mime.includes('mpeg') ? 'mp3'
-                : mime.includes('wav')  ? 'wav'
-                : 'audio';
-    const label = ext === 'webm' ? 'WebM' : ext === 'm4a' ? 'MP4' : ext.toUpperCase();
-    const filename = `sounddrop_recording.${ext}`;
-    const downloadBtn = downloadSrc
-      ? `<a class="btn-download-audio" href="${downloadSrc}" download="${filename}">
-           <i class="fa-solid fa-download"></i> Download to play (.${ext})
-         </a>`
-      : '';
+    const code = audioEl.error?.code;
     const wrapper = audioEl.parentElement;
-    if (wrapper) {
+    if (!wrapper) return;
+
+    if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+      // Format not supported — replace with download link
+      const downloadSrc = audioEl.dataset.download || audioEl.querySelector('source')?.src || '';
+      const mime = audioEl.querySelector('source')?.type || 'audio';
+      const ext   = mime.includes('webm') ? 'webm'
+                  : mime.includes('mp4')  ? 'm4a'
+                  : mime.includes('ogg')  ? 'ogg'
+                  : mime.includes('mpeg') ? 'mp3'
+                  : mime.includes('wav')  ? 'wav'
+                  : 'audio';
+      const label = ext === 'webm' ? 'WebM' : ext === 'm4a' ? 'MP4' : ext.toUpperCase();
+      const filename = `sounddrop_recording.${ext}`;
+      const downloadBtn = downloadSrc
+        ? `<a class="btn-download-audio" href="${downloadSrc}" download="${filename}">
+             <i class="fa-solid fa-download"></i> Download to play (.${ext})
+           </a>`
+        : '';
       wrapper.innerHTML = `
         <div class="audio-unsupported">
           <i class="fa-solid fa-triangle-exclamation"></i>
           <span>${label} format not supported on this device.</span>
           ${downloadBtn}
         </div>`;
+    } else {
+      // Network / decode / aborted error — show a retry button
+      const retrySrc = audioEl.dataset.url || audioEl.querySelector('source')?.src || '';
+      const retryMime = audioEl.dataset.mime || audioEl.querySelector('source')?.type || 'audio/mpeg';
+      if (!retrySrc) return;
+      wrapper.innerHTML = `
+        <div class="audio-unsupported">
+          <i class="fa-solid fa-rotate-right"></i>
+          <span>Audio failed to load.</span>
+          <button class="btn-audio-retry" onclick="retryAudio(this, '${retrySrc}', '${retryMime}')">
+            Try again
+          </button>
+        </div>`;
     }
   }, { once: true });
+}
+
+function retryAudio(btn, src, mime) {
+  const wrapper = btn.parentElement?.parentElement;
+  if (!wrapper) return;
+  wrapper.innerHTML = `
+    <audio class="drop-audio" controls preload="auto"
+        data-download="${src}" data-url="${src}" data-mime="${mime}">
+      <source src="${src}?retry=${Date.now()}" type="${mime}">
+      Your browser does not support audio playback.
+    </audio>`;
+  fixAudioDuration(wrapper.querySelector('.drop-audio'));
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -753,7 +778,9 @@ async function shareRecording() {
         hidePanel('recording-panel');
         resetRecording();
         if (groupCode === getActiveGroup()) {
-          drops.unshift(data.drop);
+          const freshDrop = { ...data.drop };
+          delete freshDrop.audioData;  // use streaming URL instead of blob
+          drops.unshift(freshDrop);
           renderDrops();
           updateStats();
           saveCache();
@@ -810,7 +837,9 @@ async function confirmUpload() {
       if (res.ok) {
         const data = await res.json();
         if (groupCode === getActiveGroup()) {
-          drops.unshift(data.drop);
+          const freshDrop = { ...data.drop };
+          delete freshDrop.audioData;  // use streaming URL instead of blob
+          drops.unshift(freshDrop);
           renderDrops();
           updateStats();
           saveCache();

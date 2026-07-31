@@ -692,6 +692,24 @@ body {
   background: #574fd6;
 }
 
+.btn-audio-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  background: #e67e22;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.85em;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.btn-audio-retry:hover {
+  background: #d35400;
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
