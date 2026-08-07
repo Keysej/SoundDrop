@@ -519,7 +519,7 @@ async function handleApplaud(dropId, btn, card) {
   try {
     const res = await apiFetch(`/api/sound-drops/${dropId}/applaud`, {
       method: 'POST',
-      body: JSON.stringify({ applaud: adding })
+      body: JSON.stringify({ applaud: adding, applaud_at: new Date().toISOString() })
     });
     if (res.ok) {
       const data = await res.json();
@@ -605,6 +605,18 @@ function getBestMimeType() {
 // Extract bare MIME type from a data URL (e.g. "audio/webm" from "data:audio/webm;base64,...")
 function mimeFromDataURL(dataURL) {
   try { return dataURL.split(',')[0].split(':')[1].split(';')[0]; } catch { return ''; }
+}
+
+// Human-readable timestamp used as filename, e.g. "Aug 7: 4:45pm"
+function formatDropTime(d) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const month = months[d.getMonth()];
+  const day = d.getDate();
+  let hours = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'pm' : 'am';
+  hours = hours % 12 || 12;
+  return `${month} ${day}: ${hours}:${mins}${ampm}`;
 }
 
 function getExtFromMime(mimeType) {
@@ -768,7 +780,7 @@ async function shareRecording() {
           audioData:  reader.result,
           context,
           type:       'recorded',
-          filename:   `recording_${Date.now()}.${ext}`,
+          filename:   `${formatDropTime(new Date())}.${ext}`,
           group_code: groupCode
         })
       });
@@ -875,7 +887,7 @@ async function shareLink() {
         audioData:  url,
         context,
         type:       'link',
-        filename:   `link_${Date.now()}`,
+        filename:   formatDropTime(new Date()),
         group_code: groupCode
       })
     });

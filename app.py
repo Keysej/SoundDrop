@@ -916,22 +916,28 @@ def export_research_data():
     try:
         # Get all data (current + archived)
         all_data = []
-        
-        # Get current data
-        if os.path.exists(STORAGE_FILE):
-            with open(STORAGE_FILE, 'r') as f:
-                current_data = json.load(f)
-                for item in current_data:
-                    item['data_source'] = 'current'
-                all_data.extend(current_data)
-        
+
+        # Get current data from authoritative source (MongoDB on Vercel)
+        current_drops = load_sound_drops()
+        for item in current_drops:
+            item = dict(item)
+            item['data_source'] = 'current'
+            # For link drops, surface the URL as a dedicated field
+            if item.get('type') == 'link':
+                item['url'] = item.get('audioData', '')
+            item.pop('audioData', None)
+            all_data.append(item)
+
         # Get archived data from MongoDB
         if init_mongodb():
             try:
-                archived_data = list(research_db.sound_drops_archive.find({}, {'audioData': 0}))
+                archived_data = list(research_db.sound_drops_archive.find({}))
                 for item in archived_data:
                     item['_id'] = str(item['_id'])
                     item['data_source'] = 'archived'
+                    if item.get('type') == 'link':
+                        item['url'] = item.get('audioData', '')
+                    item.pop('audioData', None)
                 all_data.extend(archived_data)
             except Exception as e:
                 print(f"Could not fetch archived data: {e}")
@@ -949,7 +955,10 @@ def export_research_data():
                         'theme': drop.get('theme', ''),
                         'type': drop.get('type', ''),
                         'filename': drop.get('filename', ''),
+                        'url': drop.get('url', ''),
                         'context': drop.get('context', ''),
+                        'applauds': drop.get('applauds', 0),
+                        'applaud_times': '; '.join(drop.get('applaud_events', [])),
                         'data_source': drop.get('data_source', ''),
                         'archived_at': drop.get('archived_at', ''),
                         'comments_count': len(drop.get('discussions', []))
@@ -1470,6 +1479,7 @@ def toggle_applaud(drop_id):
         data = request.get_json()
         applaud = data.get('applaud', True)
         inc = 1 if applaud else -1
+        applaud_at = data.get('applaud_at') or datetime.datetime.utcnow().isoformat()
 
         if init_mongodb():
             # Atomic increment — avoids loading/saving all drops (which timeouts
@@ -1481,6 +1491,12 @@ def toggle_applaud(drop_id):
                 filter_q,
                 [{'$set': {'applauds': {'$max': [0, {'$add': [{'$ifNull': ['$applauds', 0]}, inc]}]}}}]
             )
+            # Record when each applaud happened for research tracking
+            if applaud:
+                research_db.active_sounds.update_one(
+                    {'id': drop_id},
+                    {'$push': {'applaud_events': applaud_at}}
+                )
             doc = research_db.active_sounds.find_one({'id': drop_id}, {'applauds': 1})
             if not doc:
                 return jsonify({'error': 'Sound drop not found'}), 404
@@ -1492,6 +1508,8 @@ def toggle_applaud(drop_id):
         if not target:
             return jsonify({'error': 'Sound drop not found'}), 404
         target['applauds'] = max(0, int(target.get('applauds', 0)) + inc)
+        if applaud:
+            target.setdefault('applaud_events', []).append(applaud_at)
         save_sound_drops(drops)
         return jsonify({'message': 'Applaud updated!', 'applauds': target['applauds']})
 
