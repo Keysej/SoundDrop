@@ -369,29 +369,43 @@
 
   <script>
     let adminAuthenticated = false;
-    let adminPassword = 'research2024';
+    let enteredKey = '';
 
-    function loginAdmin() {
+    async function loginAdmin() {
       const password = document.getElementById('admin-password').value;
       const errorDiv = document.getElementById('login-error');
-      
-      if (password === adminPassword) {
-        adminAuthenticated = true;
-        document.getElementById('login-section').style.display = 'none';
-        document.getElementById('dashboard-section').style.display = 'block';
-        loadGroupOptions();
-        loadDashboardData();
-        errorDiv.style.display = 'none';
-      } else {
-        errorDiv.textContent = 'Invalid password. Please try again.';
+      const btn = document.querySelector('.login-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+
+      try {
+        // Validate against the server — never check the password client-side
+        const resp = await fetch('/api/admin/groups', {
+          headers: { 'Authorization': `Bearer ${password}` }
+        });
+        if (resp.ok) {
+          enteredKey = password;
+          adminAuthenticated = true;
+          document.getElementById('login-section').style.display = 'none';
+          document.getElementById('dashboard-section').style.display = 'block';
+          loadGroupOptions();
+          loadDashboardData();
+          errorDiv.style.display = 'none';
+        } else {
+          errorDiv.textContent = 'Invalid password. Please try again.';
+          errorDiv.style.display = 'block';
+        }
+      } catch (e) {
+        errorDiv.textContent = 'Connection error. Please try again.';
         errorDiv.style.display = 'block';
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Access Dashboard'; }
       }
     }
 
     async function loadGroupOptions() {
       try {
         const resp = await fetch('/api/admin/groups', {
-          headers: { 'Authorization': 'Bearer research2024' }
+          headers: { 'Authorization': `Bearer ${enteredKey}` }
         });
         if (!resp.ok) return;
         const groups = await resp.json();
@@ -432,7 +446,7 @@
           const groupParam = selectedGroup !== 'all' ? `?group=${selectedGroup}` : '';
           const activeResponse = await fetch(`/api/admin/sound-drops${groupParam}`, {
             headers: {
-              'Authorization': 'Bearer research2024'
+              'Authorization': `Bearer ${enteredKey}`
             }
           });
           if (activeResponse.ok) {
@@ -474,7 +488,7 @@
         // Try to load archived data from research endpoint
         let archivedData = [];
         try {
-          const exportResponse = await fetch('/api/research/export?format=json&key=research2024');
+          const exportResponse = await fetch(`/api/research/export?format=json&key=${enteredKey}`);
           if (exportResponse.ok) {
             const exportData = await exportResponse.json();
             if (exportData.data) {
@@ -643,7 +657,7 @@
         try {
           const apiResponse = await fetch('/api/admin/sound-drops', {
             headers: {
-              'Authorization': 'Bearer research2024'
+              'Authorization': `Bearer ${enteredKey}`
             }
           });
           if (apiResponse.ok) {
@@ -778,7 +792,7 @@
       try {
         btn.textContent = '⏳ Fetching list...';
         const resp = await fetch('/api/admin/export-applauded', {
-          headers: { 'Authorization': 'Bearer research2024' }
+          headers: { 'Authorization': `Bearer ${enteredKey}` }
         });
         if (!resp.ok) throw new Error('Server returned ' + resp.status);
         const drops = await resp.json();
@@ -867,7 +881,7 @@
         const response = await fetch(`/api/sound-drops/${dropId}`, {
           method: 'DELETE',
           headers: {
-            'Authorization': 'Bearer research2024',
+            'Authorization': `Bearer ${enteredKey}`,
             'Content-Type': 'application/json'
           }
         });
