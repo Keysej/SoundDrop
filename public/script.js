@@ -842,7 +842,7 @@ async function confirmUpload() {
           audioData:  reader.result,
           context,
           type:       'uploaded',
-          filename:   file.name,
+          filename:   `${formatDropTime(new Date())}.${file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'audio'}`,
           group_code: groupCode
         })
       });
