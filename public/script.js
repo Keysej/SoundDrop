@@ -73,7 +73,7 @@ let dropsCleared   = false;
 
 // ── Local cache ───────────────────────────────────────────────────────────────
 // All groups share one feed, so use a single cache key.
-function getCacheKey() { return 'sounddrop_drops_all'; }
+function getCacheKey() { return `sounddrop_drops_${getActiveGroup()}`; }
 
 function saveCache() {
   try {
@@ -294,7 +294,7 @@ async function loadTheme() {
 // ── Drops ─────────────────────────────────────────────────────────────────────
 async function loadDrops() {
   try {
-    const res = await apiFetch('/api/sound-drops?group=all');
+    const res = await apiFetch(`/api/sound-drops?group=${getActiveGroup()}`);
     if (!res.ok) return;
     const all = await res.json();
 
