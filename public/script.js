@@ -72,8 +72,8 @@ let currentFilter  = 'all';
 let dropsCleared   = false;
 
 // ── Local cache ───────────────────────────────────────────────────────────────
-// Per-group cache so switching groups shows the right drops instantly.
-function getCacheKey() { return `sounddrop_drops_${getActiveGroup()}`; }
+// All groups share one feed, so use a single cache key.
+function getCacheKey() { return 'sounddrop_drops_all'; }
 
 function saveCache() {
   try {
@@ -294,7 +294,7 @@ async function loadTheme() {
 // ── Drops ─────────────────────────────────────────────────────────────────────
 async function loadDrops() {
   try {
-    const res = await apiFetch(`/api/sound-drops?group=${getActiveGroup()}`);
+    const res = await apiFetch('/api/sound-drops?group=all');
     if (!res.ok) return;
     const all = await res.json();
 
