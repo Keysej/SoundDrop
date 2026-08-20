@@ -5,7 +5,7 @@
 // ?group= URL links still work for backwards compat — they auto-join + activate.
 (function () {
   const params   = new URLSearchParams(window.location.search);
-  const urlGroup = (params.get('group') || '').trim();
+  const urlGroup = (params.get('group') || '').trim().toLowerCase();
   if (urlGroup) {
     const existing = JSON.parse(localStorage.getItem('sounddrop_groups') || '[]');
     if (!existing.find(g => g.code === urlGroup)) {
@@ -72,7 +72,6 @@ let currentFilter  = 'all';
 let dropsCleared   = false;
 
 // ── Local cache ───────────────────────────────────────────────────────────────
-// All groups share one feed, so use a single cache key.
 function getCacheKey() { return `sounddrop_drops_${getActiveGroup()}`; }
 
 function saveCache() {
