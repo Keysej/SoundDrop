@@ -72,7 +72,7 @@ let currentFilter  = 'all';
 let dropsCleared   = false;
 
 // ── Local cache ───────────────────────────────────────────────────────────────
-function getCacheKey() { return `sounddrop_drops_${getActiveGroup()}`; }
+function getCacheKey() { return 'sounddrop_drops_all'; }
 
 function saveCache() {
   try {
@@ -293,14 +293,21 @@ async function loadTheme() {
 // ── Drops ─────────────────────────────────────────────────────────────────────
 async function loadDrops() {
   try {
-    const res = await apiFetch(`/api/sound-drops?group=${getActiveGroup()}`);
+    const res = await apiFetch('/api/sound-drops?group=all');
     if (!res.ok) return;
     const all = await res.json();
+
+    // Only show sounds from groups this user has joined (or 'default' if no groups)
+    const myGroupCodes = new Set(getGroups().map(g => g.code));
+    if (myGroupCodes.size === 0) myGroupCodes.add('default');
 
     // Trim to today's drops (server sends last 30 h; frontend trims to local midnight)
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    const serverDrops = all.filter(d => d.timestamp >= midnight.getTime());
+    const serverDrops = all.filter(d =>
+      d.timestamp >= midnight.getTime() &&
+      myGroupCodes.has(d.group_code || 'default')
+    );
 
     // Merge: server data wins but we keep any local drops not yet on server
     drops = mergeWithCache(serverDrops);
